@@ -1,6 +1,6 @@
 // Package keyring 读取、解析并受控写入 agy 保存在 Secret Service 中的 OAuth 凭据。
 //
-// 读取路径供 status/add 使用；写入仅由 agsw gui 在确认需要重启 agy 时调用。
+// 读取路径供 status/add 使用；写入由 use/daemon/tui 在切换账号时调用。
 // 本包使用 agy 同款库 zalando/go-keyring，保证与其字节级兼容。
 package keyring
 

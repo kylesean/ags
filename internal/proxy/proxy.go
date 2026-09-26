@@ -491,6 +491,15 @@ func retryRequestBody(r *http.Request) ([]byte, bool, error) {
 	return body, true, nil
 }
 
+// writeBadRequest 写出 JSON 400。必须经 json 编码：err 文案可能含引号/换行，
+// 手拼字符串会产生非法 JSON（畸形请求体恰是高发区）。
+func (s *Server) writeBadRequest(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{"code": 400, "message": message},
+	})
+}
 // ServeHTTP 改写请求体 → （信封改写）→ 选号 → 注入 → 转发。
 //
 // 改写必须在选号之前完成：它可能直接失败（body 不是 JSON），
@@ -499,10 +508,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(s.stripFields) > 0 {
 		if err := s.rewriteBody(r); err != nil {
 			s.log.Printf("改写请求体失败 %s%s: %v", r.Host, r.URL.Path, err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w,
-				`{"error":{"code":400,"message":"agsw: 改写请求体失败: `+err.Error()+`"}}`)
+			s.writeBadRequest(w, "agsw: 改写请求体失败: "+err.Error())
 			return
 		}
 	}
@@ -512,10 +518,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.envelope {
 		if err := s.applyEnvelope(r); err != nil {
 			s.log.Printf("信封改写失败 %s%s: %v", r.Host, r.URL.Path, err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w,
-				`{"error":{"code":400,"message":"agsw: `+err.Error()+`"}}`)
+			s.writeBadRequest(w, "agsw: "+err.Error())
 			return
 		}
 	}

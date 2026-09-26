@@ -43,6 +43,10 @@ const DefaultUpstream = "https://daily-cloudcode-pa.googleapis.com"
 // defaultUserAgent 是上游服务要求的客户端标识头，用于通行认证闸门。
 const defaultUserAgent = "antigravity-cli/1.2.9"
 
+// DefaultQuotaInterval 是额度轮询默认间隔。5 小时窗口下额度变化缓慢，
+// 突发切换由 429 即时触发兜底，常规轮询 3 分钟足够；实际等待叠加 ±25% 抖动。
+const DefaultQuotaInterval = 3 * time.Minute
+
 // cmdServe 启动反向代理服务。
 // 职责：挑选有效账号 → 注入 Authorization 与专用 User-Agent → 双向改写请求/响应信封
 // → 转发上游 → 后台监听配额并在耗尽或收到 429 时自动切号。
@@ -68,7 +72,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 		"关闭信封改写，纯透传（调试用；此时上游不会接受 agy 的 Gemini 路径）")
 	noModelAlias := fs.Bool("no-model-alias", false,
 		"不拉模型表、不做模型名映射（调试用；gemini-3.8-flash 之类会 404）")
-	quotaInterval := fs.Duration("quota-interval", time.Minute,
+	quotaInterval := fs.Duration("quota-interval", DefaultQuotaInterval,
 		"GEMINI 额度轮询间隔；设为 0 关闭额度检测（关了就不会自动换号）")
 	quotaThreshold := fs.Float64("quota-threshold", 0,
 		"GEMINI 剩余比例 ≤ 该值即判耗尽并换号（0 = 归零才切，不浪费残量）")
@@ -188,7 +192,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 	if *quotaInterval > 0 {
 		qw := newQuotaWatcher(sel, *upstream, srv.UserAgentForUpstream(), *quotaThreshold, lg)
 		adapter.on429 = func(name string) {
-			qw.triggerCheck()
+			qw.triggerAccount(name)
 		}
 		qw.check(ctx, true)
 		// 启动首轮额度检查可能已经冷却了 first；重新 Pick 一次，
@@ -344,6 +348,18 @@ func (p *selectorPicker) ReportStatus(name string, statusCode int) {
 		if p.on429 != nil {
 			p.on429(name)
 		}
+		return
+	}
+	if statusCode == http.StatusUnauthorized {
+		// token 被吊销/失效但本地 Expiry 尚远时，靠 skew 自愈太慢：
+		// 先让该号避让 30s 并唤醒额度轮询，下次 Pick 即换号。
+		if p.log != nil {
+			p.log.Printf("上游返回 401，账号 %s 进入临时冷却 (30 秒)", name)
+		}
+		p.sel.SetCooldown(name, time.Now().Add(30*time.Second))
+		if p.on429 != nil {
+			p.on429(name)
+		}
 	}
 }
 
@@ -408,13 +424,14 @@ func resolveCandidates(name string) ([]*pool.Account, error) {
 		return nil, fmt.Errorf("解析身份失败: %w", claimsErr)
 	}
 	return []*pool.Account{{
-		Name:         "keyring",
-		Email:        email,
-		ClientID:     claims.Audience(),
-		AccessToken:  sec.Token.AccessToken,
-		RefreshToken: sec.Token.RefreshToken,
-		Expiry:       sec.Token.Expiry.Time,
-		AuthMethod:   sec.AuthMethod,
+		Name:            "keyring",
+		Email:           email,
+		ClientID:        claims.Audience(),
+		AccessToken:     sec.Token.AccessToken,
+		RefreshToken:    sec.Token.RefreshToken,
+		Expiry:          sec.Token.Expiry.Time,
+		AuthMethod:      sec.AuthMethod,
+		KeyringFallback: true,
 	}}, nil
 }
 
@@ -465,7 +482,8 @@ func refreshAccount(ctx context.Context, a *pool.Account) error {
 	if res.RefreshToken != "" {
 		a.RefreshToken = res.RefreshToken
 	}
-	if a.Name == "keyring" {
+	if a.KeyringFallback {
+		// 内存伪账号（池空回落）：本就来自 keyring，无文件可落盘。
 		return nil
 	}
 	exists, err := pool.Exists(a.Name)

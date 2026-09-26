@@ -220,6 +220,36 @@ func (s *Selector) SetCooldown(name string, until time.Time) {
 	}
 }
 
+// SetCooldownMax 仅当 until 晚于现有冷却时才更新，避免缩短 429 等路径打上的更长避让。
+func (s *Selector) SetCooldownMax(name string, until time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.cands {
+		if a == nil || a.Name != name {
+			continue
+		}
+		if until.After(a.CooldownUntil) {
+			a.CooldownUntil = until
+		}
+		return
+	}
+}
+
+// ClearExpiredCooldown 仅在现有冷却已过期（或无）时清零；
+// 仍在未来的冷却（如刚打上的 429 避让）予以保留，防止健康轮询误洗。
+func (s *Selector) ClearExpiredCooldown(name string, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.cands {
+		if a == nil || a.Name != name {
+			continue
+		}
+		if a.CooldownUntil.IsZero() || !now.Before(a.CooldownUntil) {
+			a.CooldownUntil = time.Time{}
+		}
+		return
+	}
+}
 // SetQuotaState 记录账号的额度耗尽标记（内存状态）。
 func (s *Selector) SetQuotaState(name string, exhausted bool) {
 	s.mu.Lock()
@@ -270,25 +300,48 @@ func (s *Selector) FreshToken(ctx context.Context, name string) (string, error) 
 }
 
 // RefreshAll 强制刷新全部候选账号，常用于启动预热。
+// 并发刷新各账号（每账号持其细粒度锁与 Pick/FreshToken 互斥），不持全局锁，
+// 避免单个账号的网络往返阻塞选号与额度轮询。
 func (s *Selector) RefreshAll(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.refresh == nil {
 		return errors.New("未配置 Refresher，无法刷新")
 	}
 
+	s.mu.Lock()
+	cands := append([]*Account(nil), s.cands...)
+	s.mu.Unlock()
+
+	var mu sync.Mutex
 	var errs []error
 	tried := 0
-	for _, a := range s.cands {
-		if a == nil || a.RefreshToken == "" {
+	var wg sync.WaitGroup
+	for _, a := range cands {
+		if a == nil {
 			continue
 		}
-		tried++
-		if err := s.refresh(ctx, a); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", a.Name, err))
-		}
+		wg.Add(1)
+		go func(ac *Account) {
+			defer wg.Done()
+			l := s.accountLock(ac.Name)
+			l.Lock()
+			defer l.Unlock()
+			if ac.RefreshToken == "" {
+				return
+			}
+			mu.Lock()
+			tried++
+			mu.Unlock()
+			if err := s.refresh(ctx, ac); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", ac.Name, err))
+				mu.Unlock()
+			}
+		}(a)
 	}
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
 	if tried == 0 {
 		return errors.New("候选账号都没有 refresh_token，无法刷新")
 	}

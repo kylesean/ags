@@ -60,12 +60,12 @@ func setEnv(env []string, key, value string) []string {
 	return out
 }
 
-func defaultGUIlogPath() string {
+func defaultTUILogPath() string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "agsw", "gui.log")
+	return filepath.Join(dir, "agsw", "tui.log")
 }
 
 func openLogFile(path string) (*os.File, error) {
@@ -149,6 +149,14 @@ func secretFromAccount(a *pool.Account) *keyring.Secret {
 func syncKeyringAccount(sw accountSwitch) error {
 	a, err := pool.Load(sw.name)
 	if err != nil {
+		// 池空回落的内存伪账号（Name=="keyring" 但磁盘无文件）：
+		// 其凭据本就来自 keyring，无源可同步，直接跳过而非让 tui 启动失败。
+		// 真名为 keyring 的磁盘账号走正常路径，不受影响。
+		if sw.name == "keyring" {
+			if exists, existsErr := pool.Exists(sw.name); existsErr == nil && !exists {
+				return nil
+			}
+		}
 		return fmt.Errorf("加载切换账号 %q 失败: %w", sw.name, err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(a.Email), strings.TrimSpace(sw.email)) {
@@ -193,64 +201,123 @@ func stopAgy(p *managedAgy, timeout time.Duration) {
 	}
 }
 
-// cmdGUI 统一启动 Gateway 和 agy，避免用户手动设置 AGY_GATEWAY_URL。
+// cmdTUI 统一启动 Gateway 和 agy，避免用户手动设置 AGY_GATEWAY_URL。
 
 func isOneShotAgy(args []string) bool {
 	for _, arg := range args {
-		switch arg {
+		name, value, hasValue := strings.Cut(arg, "=")
+		switch name {
 		case "-p", "--print", "--prompt":
-			return true
+			if !hasValue {
+				return true
+			}
+			// --print=false 显式关闭时不是一次性；--prompt=xxx 携值时是一次性。
+			v := strings.ToLower(strings.TrimSpace(value))
+			switch v {
+			case "false", "0", "no", "off":
+				continue
+			default:
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// 用法：agsw gui [serve flags] [-- agy flags]
-func cmdGUI(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("gui", flag.ContinueOnError)
-	listen := fs.String("listen", "127.0.0.1:7897", "Gateway 监听地址")
-	account := fs.String("account", "", "只使用指定账号")
-	threshold := fs.Float64("quota-threshold", 0, "额度耗尽阈值")
-	interval := fs.Duration("quota-interval", time.Minute, "额度轮询间隔")
-	verbose := fs.Bool("v", false, "打印每个请求的详细选号日志")
-	logFile := fs.String("log-file", defaultGUIlogPath(), "Gateway/GUI 日志文件")
-	noModelAlias := fs.Bool("no-model-alias", false, "不拉取模型表")
-	syncKeyring := fs.Bool("sync-keyring", true, "切换账号时同步 Keyring 并重启 agy")
+// tuiOptions 是 tui 的全部开关（serve 透传项 + tui 独有项）。
+// 抽出以便单测只验解析不拉起 agy 进程。
+type tuiOptions struct {
+	listen       string
+	upstream     string
+	account      string
+	refresh      bool
+	threshold    float64
+	interval     time.Duration
+	verbose      bool
+	logFile      string
+	ua           string
+	passthrough  bool
+	noModelAlias bool
+	syncKeyring  bool
+	stripFields  stringList
+}
+
+func parseTUIArgs(args []string) (tuiOptions, []string, error) {
+	var o tuiOptions
+	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
+	fs.StringVar(&o.listen, "listen", "127.0.0.1:7897", "Gateway 监听地址")
+	fs.StringVar(&o.upstream, "upstream", DefaultUpstream, "上游地址")
+	fs.StringVar(&o.account, "account", "", "只使用指定账号")
+	fs.BoolVar(&o.refresh, "refresh", false, "启动时先强制刷新一次 access_token")
+	fs.Float64Var(&o.threshold, "quota-threshold", 0, "额度耗尽阈值")
+	fs.DurationVar(&o.interval, "quota-interval", DefaultQuotaInterval, "额度轮询间隔")
+	fs.BoolVar(&o.verbose, "v", false, "打印每个请求的详细选号日志")
+	fs.StringVar(&o.logFile, "log-file", defaultTUILogPath(), "Gateway/TUI 日志文件")
+	fs.StringVar(&o.ua, "user-agent", defaultUserAgent, "发给上游的 User-Agent")
+	fs.BoolVar(&o.passthrough, "passthrough", false, "关闭信封改写，纯透传（调试用）")
+	fs.BoolVar(&o.noModelAlias, "no-model-alias", false, "不拉取模型表")
+	fs.BoolVar(&o.syncKeyring, "sync-keyring", true, "切换账号时同步 Keyring 并重启 agy")
+	fs.Var(&o.stripFields, "strip-field", "转发前从请求体顶层删掉这个 JSON 字段，可重复")
 	if err := fs.Parse(args); err != nil {
+		return o, nil, err
+	}
+	return o, fs.Args(), nil
+}
+
+func (o tuiOptions) serveArgs() []string {
+	serveArgs := []string{
+		"-listen", o.listen,
+		"-upstream", o.upstream,
+		"-log-file", o.logFile,
+		"-user-agent", o.ua,
+		"-quota-threshold", strconv.FormatFloat(o.threshold, 'g', -1, 64),
+		"-quota-interval", o.interval.String(),
+	}
+	if o.refresh {
+		serveArgs = append(serveArgs, "-refresh")
+	}
+	if o.passthrough {
+		serveArgs = append(serveArgs, "-passthrough")
+	}
+	for _, f := range o.stripFields {
+		serveArgs = append(serveArgs, "-strip-field", f)
+	}
+	if o.verbose {
+		serveArgs = append(serveArgs, "-v")
+	}
+	if o.account != "" {
+		serveArgs = append(serveArgs, "-account", o.account)
+	}
+	if o.noModelAlias {
+		serveArgs = append(serveArgs, "-no-model-alias")
+	}
+	return serveArgs
+}
+
+// 用法：agsw [serve flags] [-- agy flags]
+func cmdTUI(ctx context.Context, args []string) error {
+	o, agyArgs, err := parseTUIArgs(args)
+	if err != nil {
 		return err
 	}
-	agyArgs := fs.Args()
+	syncKeyring := o.syncKeyring
 	oneShot := isOneShotAgy(agyArgs)
-	if *syncKeyring && oneShot {
-		fmt.Fprintln(os.Stderr, "[gui] 一次性 agy 命令不启用 Keyring 自动重启")
+	if syncKeyring && oneShot {
+		fmt.Fprintln(os.Stderr, "[tui] 一次性 agy 命令不启用 Keyring 自动重启")
 	}
 	if _, err := exec.LookPath("agy"); err != nil {
 		return fmt.Errorf("找不到 agy，请先安装并加入 PATH: %w", err)
 	}
-	guiLogFile, err := openLogFile(*logFile)
+	tuiLogFile, err := openLogFile(o.logFile)
 	if err != nil {
-		return fmt.Errorf("打开 GUI 日志失败: %w", err)
+		return fmt.Errorf("打开 TUI 日志失败: %w", err)
 	}
-	defer guiLogFile.Close()
-	guiLog := log.New(guiLogFile, "[gui] ", log.LstdFlags|log.Lmsgprefix)
+	defer tuiLogFile.Close()
+	tuiLog := log.New(tuiLogFile, "[tui] ", log.LstdFlags|log.Lmsgprefix)
 
-	serveArgs := []string{
-		"-listen", *listen,
-		"-log-file", *logFile,
-		"-quota-threshold", strconv.FormatFloat(*threshold, 'g', -1, 64),
-		"-quota-interval", interval.String(),
-	}
-	if *verbose {
-		serveArgs = append(serveArgs, "-v")
-	}
-	if *account != "" {
-		serveArgs = append(serveArgs, "-account", *account)
-	}
-	if *noModelAlias {
-		serveArgs = append(serveArgs, "-no-model-alias")
-	}
+	serveArgs := o.serveArgs()
 
-	syncOnSwitch := *syncKeyring && !oneShot
+	syncOnSwitch := syncKeyring && !oneShot
 	switchCh := make(chan accountSwitch, 1)
 	hooks := serveHooks{}
 	var switchMu sync.Mutex
@@ -277,8 +344,8 @@ func cmdGUI(ctx context.Context, args []string) error {
 		cancel()
 	}()
 
-	gateway := gatewayURL(*listen)
-	if err := waitGateway(runCtx, *listen, serverErr); err != nil {
+	gateway := gatewayURL(o.listen)
+	if err := waitGateway(runCtx, o.listen, serverErr); err != nil {
 		return err
 	}
 
@@ -301,7 +368,7 @@ func cmdGUI(ctx context.Context, args []string) error {
 	for {
 		select {
 		case sw := <-switchCh:
-			guiLog.Printf("切换账号 %s (%s)，同步 Keyring 并重启 agy", sw.name, sw.email)
+			tuiLog.Printf("切换账号 %s (%s)，同步 Keyring 并重启 agy", sw.name, sw.email)
 			if err := syncKeyringAccount(sw); err != nil {
 				stopAgy(agy, 5*time.Second)
 				cancel()
@@ -309,7 +376,7 @@ func cmdGUI(ctx context.Context, args []string) error {
 			}
 			stopAgy(agy, 5*time.Second)
 			agy = startAgy(env, agyArgs)
-			guiLog.Println("agy 已重启，请执行 /resume 恢复会话")
+			tuiLog.Println("agy 已重启，请执行 /resume 恢复会话")
 		case err := <-agy.done:
 			cancel()
 			if err != nil && ctx.Err() == nil {

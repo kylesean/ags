@@ -71,9 +71,10 @@ agsw list     # 列出账号池中的所有账号
 agsw status   # 查看当前系统 Keyring 账号与账号池状态
 agsw drop     # 从账号池中移除指定账号
 agsw usage    # 查询账号池中各账号的真实额度
-agsw          # 推荐：直接启动 Gateway 并拉起 agy
-agsw gui      # 兼容别名：等价于 agsw
-agsw serve    # 仅启动反向代理
+agsw          # TUI：直接启动并拉起 agy
+agsw daemon   # 轻量本体：轮询额度并同步 Keyring（推荐常驻）
+agsw use B    # 手动切换 Keyring 到账号 B
+agsw serve    # 仅启动反向代理（可选）
 ```
 
 ### 账号登录 (`login`)
@@ -98,37 +99,48 @@ agsw login -timeout 10m D             # 指定超时时间（默认 5m）
 ### 代理启动 (`serve`)
 
 ```sh
-# 默认配置启动代理（监听 127.0.0.1:8085）
+# 默认配置启动代理（监听 127.0.0.1:7897）
 agsw serve
 
 # 配合 agy 网关接入
-AGY_GATEWAY_URL=http://127.0.0.1:8085 agy --print 'hi'
+AGY_GATEWAY_URL=http://127.0.0.1:7897 agy --print 'hi'
 
 # 常用选项
 agsw serve -account main      # 仅使用指定账号
 agsw serve -refresh           # 启动时强制预刷新 Token
 agsw serve -v                 # 详细日志输出每次选号与转发详情
-agsw serve -quota-interval 1m # 配额轮询间隔（默认 1 分钟）
+agsw serve -quota-interval 3m # 配额轮询间隔（默认 3 分钟，±25% 抖动）
 ```
 
-### 统一启动 (`gui`)
+### 轻量本体 (`daemon` / `use`)
 
-`gui` 是推荐入口：它会启动 Gateway，等待本地端口 ready，自动设置
-`AGY_GATEWAY_URL` 和 `NO_PROXY`，然后拉起 `agy`；`agy` 退出时自动关闭 Gateway。
-Gateway、额度轮询和账号切换日志默认写入 `~/.cache/agsw/gui.log`，不会插入 agy 的
-TUI 界面；可用 `tail -f ~/.cache/agsw/gui.log` 查看。
-
-交互式 `agy` 默认启用 `-sync-keyring`：实际选中的账号变化时，`gui` 会先把新账号
-凭据写入系统 Keyring，再只重启自己启动的 `agy`。重启后执行 `/resume` 恢复原会话，
-GUI 顶部账号会读取新的 Keyring 身份。agy 原生 `/usage` 是否经过 Gateway 取决于其自身实现，
-当前不保证由 agsw 代为代理；手动启动的 `agy` 不会被杀掉。
+推荐日常用法（原生 agy，不劫持流量）：`agsw daemon` 前台常驻，每 3 分钟
+（±25% 抖动）轮询一次额度，自动把 Keyring 写成当前最健康的账号并提醒重启；
+手动范式用 `agsw use <name>`（先验额，`--force` 强行）。切换后重启 agy
+生效（交互式执行 `/resume` 恢复）。agy 原生 `/usage` 直连 Google、用 Keyring
+身份，因此与同步后的状态天然一致。
 
 ```sh
-# 启动交互式 agy（推荐，最短用法）
-agsw
+agsw daemon                 # 前台常驻（systemd/tmux 托管）
+agsw daemon -quota-interval 5m
+agsw use B                  # 手动切换到 B
+agsw use -force C           # 无视额度强行切换
+```
 
-# 等价写法：显式使用兼容别名
-agsw gui
+### 统一启动 (`agsw` TUI)
+
+裸 `agsw` 即 TUI 入口：启动 Gateway，等待本地端口 ready，自动设置
+`AGY_GATEWAY_URL` 和 `NO_PROXY`，然后拉起 `agy`；`agy` 退出时自动关闭 Gateway。
+Gateway、额度轮询和账号切换日志默认写入 `~/.cache/agsw/tui.log`，不会插入 agy 的
+TUI 界面；可用 `tail -f ~/.cache/agsw/tui.log` 查看。
+
+交互式 `agy` 默认启用 `-sync-keyring`：实际选中的账号变化时，TUI 会先把新账号
+凭据写入系统 Keyring，再只重启自己启动的 `agy`。重启后执行 `/resume` 恢复原会话。
+手动启动的 `agy` 不会被杀掉。
+
+```sh
+# 启动交互式 agy（最短用法，裸 agsw 即 TUI）
+agsw
 
 # 把 agy 参数放在 -- 后面；额度低于 0.2% 时提前切换
 agsw -quota-threshold=0.002 -- --dangerously-skip-permissions
@@ -156,11 +168,11 @@ agsw usage -account B
 ### 额度检测与自动切号
 
 1. **只读端点感知**：
-   后台定期轮询 `v1internal:retrieveUserQuotaSummary`，仅查询配额窗口，不消耗生成额度。
+   后台定期轮询 `v1internal:retrieveUserQuotaSummary`（默认 3 分钟，±25% 抖动），仅查询配额窗口，不消耗生成额度。
 2. **多窗口计算**：
    解析 GEMINI 模型的 5 小时滑动窗口与周窗口，剩余比例低于阈值（默认 `<= 0`）即判定耗尽，自动标记账号冷却至 `resetTime`。
-3. **即时 429 联动**：
-   当上游返回 429（Too Many Requests）时，代理立即将当前账号标记短期临时冷却（1 分钟），并异步唤醒配额检测，平滑切换至下一个可用账号。
+3. **即时状态联动**：
+   上游返回 429 时当前账号冷却 1 分钟、401 时冷却 30 秒，并只对当事账号唤醒一次即时额度检测，平滑切换至下一个可用账号；健康轮询不缩短未过期的避让。
 4. **细粒度并发续期**：
    选择器采用单账号粒度的锁同步控制，单个账号的 Token 刷新不会阻塞其他健康账号的选择与使用，同时防止多请求并发触发刷新风暴。
 
@@ -177,7 +189,7 @@ agsw add <name>
 - **本地存储安全**：账号池目录强制权限 `0700`，凭据文件强制权限 `0600`，写入采用临时文件原子替换。
 - **输入合法性校验**：账号名称强制校验白名单正则 `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`，严格禁止路径穿越。
 - **敏感信息脱敏**：探针与调试日志中对 `Authorization`、`Cookie` 等鉴权头执行脱敏掩码，避免 Token 泄露。
-- **Keyring 写入受控**：`add` 和 `status` 仍只读；只有 `agsw gui` 管理交互式 `agy` 时，账号切换才会同步 Keyring 并重启它。可用 `-sync-keyring=false` 完全关闭写入。
+- **Keyring 写入受控**：`add` 和 `status` 仍只读；只有 `agsw` TUI 管理交互式 `agy` 时，账号切换才会同步 Keyring 并重启它；`daemon`/`use` 只写 Keyring，由用户重启 agy 生效。可用 `-sync-keyring=false` 完全关闭写入。
 
 ## 风险声明
 

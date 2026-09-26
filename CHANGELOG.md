@@ -3,6 +3,25 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.4.0] - 2026-09-27
+
+### Added
+- **`agsw daemon`（轻量本体）**：前台常驻，只做额度轮询 + Keyring 同步 + 重启提醒，不劫持流量、不托管 agy；原生 `/usage` 与同步状态天然一致。
+- **`agsw use <name> [--force]`（手动范式）**：先验额度再写 Keyring，无额度拒绝（`--force` 强行）。
+- **429 单号即查**：触发只查当事账号（1 次请求），常规轮询才全量。
+- **轮询抖动**：每轮叠加 ±25%，打散机械周期节拍。
+
+### Changed
+- **默认轮询间隔 1m → 3m**（`DefaultQuotaInterval`）；`serve`/`tui`/`daemon` 共用。
+- **401 触发自愈**：上游 401 打 30s 冷却并唤醒额度轮询，对齐 429。
+- **429 冷却保持**：健康轮询不再洗掉未过期的 429/401 避让（`SetCooldownMax`/`ClearExpiredCooldown` 原子语义）；耗尽分支取最晚。
+- **`RefreshAll` 并发化**：不再持全局锁跨网络刷新，各号持细粒度锁并发。
+- **CLI 改名**：裸 `agsw` 即 TUI，移除 `agsw gui` 子命令（TUI 日志改 `~/.cache/agsw/tui.log`）；400 错误体改 JSON 编码；损坏池文件跳过时打日志；组识别精确优先于模糊；`--print=` 等值形态识别。
+
+### Fixed
+- **空池 TUI 启动死路**：池空回落伪账号不再导致 `syncKeyringAccount` 失败退出；伪账号标记化，刷新不落盘，真名 `keyring` 账号不受影响。
+- **`gui` flag 对等**：TUI 透传 `upstream/refresh/user-agent/passthrough/strip-field`。
+
 ## [v0.3.0] - 2026-09-24
 
 ### Added

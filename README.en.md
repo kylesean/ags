@@ -76,8 +76,9 @@ agsw list     # List all accounts in the pool
 agsw status   # View system Keyring status alongside pool summary
 agsw drop     # Remove an account from the pool
 agsw usage    # Query real quota status of accounts in pool concurrently
-agsw          # Recommended: Launch Gateway and managed agy directly
-agsw gui      # Compatibility alias: Equivalent to agsw
+agsw          # TUI: launch and manage agy directly
+agsw daemon   # Lightweight core: poll quota and sync Keyring (recommended)
+agsw use B    # Manually switch Keyring to account B
 agsw serve    # Start reverse proxy gateway only
 ```
 
@@ -100,19 +101,31 @@ Workflow:
 3. Launches the system default browser with the authorization URL (and prints fallback in terminal).
 4. Receives callback `code`, exchanges for full tokens (including `refresh_token`), validates `id_token` claims, and atomically saves credentials with `0600` permissions.
 
-### Unified Launcher (`gui` / `agsw`)
+### Lightweight Core (`daemon` / `use`)
 
-`agsw` (or `agsw gui`) is the **recommended primary entry point**: it launches the local Gateway, waits for the port to be ready, configures `AGY_GATEWAY_URL` and `NO_PROXY`, and spawns `agy`. When `agy` exits, the Gateway shuts down cleanly.
-Gateway, quota polling, and rotation logs are written to `~/.cache/agsw/gui.log` without interfering with `agy`'s TUI. You can monitor them via `tail -f ~/.cache/agsw/gui.log`.
+Recommended daily setup (stock `agy`, no traffic interception): run `agsw daemon` in the
+foreground (manage with systemd/tmux). Every 3 minutes (±25% jitter) it polls quotas,
+writes the Keyring to the healthiest account, and tells you to restart `agy`
+(resume interactive sessions with `/resume`). Native `/usage` reads the Keyring identity
+directly, so it always agrees with the synced state.
+
+```sh
+agsw daemon                 # Foreground loop (systemd/tmux managed)
+agsw daemon -quota-interval 5m
+agsw use B                  # Manually switch to B (quota verified)
+agsw use -force C           # Switch regardless of quota
+```
+
+### Unified Launcher (TUI / `agsw`)
+
+bare `agsw` is the **TUI entry point**: it launches the local Gateway, waits for the port to be ready, configures `AGY_GATEWAY_URL` and `NO_PROXY`, and spawns `agy`. When `agy` exits, the Gateway shuts down cleanly.
+Gateway, quota polling, and rotation logs are written to `~/.cache/agsw/tui.log` without interfering with `agy`'s TUI. You can monitor them via `tail -f ~/.cache/agsw/tui.log`.
 
 Interactive `agy` sessions enable `-sync-keyring` by default: when the active account changes, `agsw` gracefully waits for in-flight streaming requests to finish before updating the system Keyring and restarting the managed `agy` instance. Simply execute `/resume` in `agy` to resume your conversation with the new account identity.
 
 ```sh
-# Start managed interactive agy session (recommended, shortest command)
+# Start managed interactive agy session (shortest command)
 agsw
-
-# Equivalent command using the explicit alias
-agsw gui
 
 # Switch early when remaining quota drops below 0.2%
 agsw -quota-threshold=0.002 -- --dangerously-skip-permissions
@@ -136,17 +149,17 @@ agsw usage -account B
 ### Standalone Proxy (`serve`)
 
 ```sh
-# Start reverse proxy (default: 127.0.0.1:8085)
+# Start reverse proxy (default: 127.0.0.1:7897)
 agsw serve
 
 # Manual gateway integration with agy
-AGY_GATEWAY_URL=http://127.0.0.1:8085 agy --print 'hi'
+AGY_GATEWAY_URL=http://127.0.0.1:7897 agy --print 'hi'
 
 # Common options
 agsw serve -account main      # Pin to a single account
 agsw serve -refresh           # Force pre-refresh tokens at startup
 agsw serve -v                 # Verbose routing & rotation logs
-agsw serve -quota-interval 1m # Quota polling interval (default: 1m)
+agsw serve -quota-interval 3m # Quota polling interval (default: 3m, ±25% jitter)
 ```
 
 ### Quota Detection & Auto-Rotation
@@ -155,8 +168,8 @@ agsw serve -quota-interval 1m # Quota polling interval (default: 1m)
    Periodically queries `v1internal:retrieveUserQuotaSummary` in the background to inspect 5-hour and weekly quota sliding windows without consuming generation quota.
 2. **Active Account Affinity**:
    Persistently sticks to the healthy active account, avoiding unnecessary account flapping when older accounts unfreeze.
-3. **Instant 429 Backoff & Retry**:
-   Intercepts HTTP 429 (Too Many Requests), instantly applies temporary cooldown (1 minute) to the failing account, triggers immediate fast-path quota re-checks, and replays the request with the next healthy account without header pollution.
+3. **Instant Status Backoff**:
+   On HTTP 429 the failing account cools down for 1 minute (30 seconds on 401), triggers an immediate single-account quota re-check, and the request fails over to the next healthy account; healthy polls never shorten an active backoff.
 4. **Fine-Grained Concurrency Control**:
    Uses per-account mutexes and double-checked locking; token network refreshes for one account never block queries or routing for other healthy accounts.
 5. **Idle & Cooldown Token Freshness**:
@@ -175,7 +188,7 @@ agsw add <name>
 - **Secure Local Storage**: Enforces strict `0700` directory and `0600` file permissions with atomic file replacement.
 - **Input Validation**: Enforces strict account name regex `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` preventing directory traversal.
 - **Credential Masking**: Automatically masks sensitive headers (`Authorization`, `Cookie`) in diagnostic probe logs.
-- **Controlled Keyring Access**: `add` and `status` remain read-only; Keyring writes only occur during managed GUI account switches when enabled (`-sync-keyring=true`).
+- **Controlled Keyring Access**: `add` and `status` remain read-only; Keyring writes only occur via `use`/`daemon` syncs or managed TUI account switches (`-sync-keyring=true`).
 
 ## Disclaimer
 

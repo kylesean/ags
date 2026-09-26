@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,9 @@ type Account struct {
 	QuotaExhausted bool      `json:"-"`
 	CooldownUntil  time.Time `json:"-"`
 	LastQuotaCheck time.Time `json:"-"`
+	// KeyringFallback 标记该对象是池空时由系统 Keyring 回落的内存伪账号，
+	// 而非磁盘文件。绝不持久化；刷新不落盘、gui 不同步回写（本就来自 keyring）。
+	KeyringFallback bool `json:"-"`
 }
 
 // Dir 返回账号池目录。环境变量 AGSW_DATA_DIR 可覆盖，便于测试。
@@ -189,7 +193,9 @@ func List() ([]*Account, error) {
 		name := strings.TrimSuffix(e.Name(), ".json")
 		a, err := Load(name)
 		if err != nil {
-			// 单个损坏文件不应让整个 list 挂掉。
+			// 单个损坏文件不应让整个 list 挂掉，但必须留痕，
+			// 否则账号“凭空消失”无从排查。
+			log.Printf("agsw: 跳过损坏的账号文件 %s: %v", e.Name(), err)
 			continue
 		}
 		out = append(out, a)

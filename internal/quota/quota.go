@@ -127,7 +127,8 @@ func (s *Summary) Gemini() *Gemini {
 	return out
 }
 
-// findGeminiGroup 按「含 gemini-5h bucket」→「displayName 含 gemini」的顺序认组。
+// findGeminiGroup 按「bucketId 键匹配」→「displayName 精确」→「displayName 模糊含名」的顺序认组。
+// 精确必须排在模糊之前，否则 "Gemini Models" 必先被模糊命中，精确分支永为死代码。
 func (s *Summary) findGeminiGroup() *Group {
 	for i := range s.Groups {
 		g := &s.Groups[i]
@@ -137,16 +138,16 @@ func (s *Summary) findGeminiGroup() *Group {
 			}
 		}
 	}
+	// 精确组名兜底（实测就是这个值）。
+	for i := range s.Groups {
+		if s.Groups[i].DisplayName == geminiGroup {
+			return &s.Groups[i]
+		}
+	}
 	for i := range s.Groups {
 		g := &s.Groups[i]
 		if strings.Contains(strings.ToLower(g.DisplayName), "gemini") {
 			return g
-		}
-	}
-	// 精确组名兜底（实测就是这个值，放最后以防上游把组名改得不含 gemini）。
-	for i := range s.Groups {
-		if s.Groups[i].DisplayName == geminiGroup {
-			return &s.Groups[i]
 		}
 	}
 	return nil

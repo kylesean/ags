@@ -20,7 +20,7 @@ import (
 const usage = `agsw — agy 多账号切换器
 
 用法:
-  agsw                 直接启动 Gateway 并拉起 agy（推荐）
+  agsw                 直接启动 TUI 并拉起 agy
   agsw <命令> [参数]  执行指定子命令
 
 命令:
@@ -31,19 +31,21 @@ const usage = `agsw — agy 多账号切换器
   status   显示当前系统 Keyring 账号与账号池状态
   drop     从池中移除指定账号
   usage    查询账号池中各账号的真实额度
+  use      验额后切换系统 Keyring 到指定账号（手动范式）
+  daemon   前台常驻：轮询额度并同步 Keyring（轻量本体）
   serve    启动反向代理（凭据注入、信封改写与自动切号）
-  gui      启动 Gateway 并自动拉起 agy（agsw 的兼容别名）
+  tui      启动 TUI 并自动拉起 agy（默认入口，即裸 agsw）
 
 各命令用 "<命令> -h" 查看参数。
 `
 
 func main() {
-	cmd := "gui"
+	cmd := "tui"
 	var args []string
 	if len(os.Args) >= 2 {
 		first := os.Args[1]
 		if strings.HasPrefix(first, "-") && first != "-h" && first != "--help" {
-			cmd = "gui"
+			cmd = "tui"
 			args = os.Args[1:]
 		} else {
 			cmd, args = first, os.Args[2:]
@@ -69,10 +71,14 @@ func main() {
 		err = cmdDrop(args)
 	case "usage":
 		err = cmdUsage(args)
+	case "use":
+		err = cmdUse(args)
+	case "daemon":
+		err = cmdDaemon(ctx, args)
 	case "serve":
 		err = cmdServe(ctx, args)
-	case "gui":
-		err = cmdGUI(ctx, args)
+	case "tui":
+		err = cmdTUI(ctx, args)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
