@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.4.1] - 2026-09-27
+
+### Added
+- **daemon 选中落盘与 `status` 重启提示**：`state.json` 记录选中账号，`status` 在 Keyring 与选中不一致时直接提示重启。
+
+### Fixed
+- **`stopAgy` 按 OS 区分**：Windows 跳过注定失败的 `Interrupt`，短等待后直接 Kill；Unix 保持优雅中断。
+
 ## [v0.4.0] - 2026-09-27
 
 ### Added

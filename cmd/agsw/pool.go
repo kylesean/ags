@@ -196,6 +196,14 @@ func cmdStatus(args []string) error {
 		fmt.Printf("  refresh    %s\n", present(sec.Token.RefreshToken != ""))
 	}
 
+	printRestartHint := func() {
+		if st, err := readDaemonState(defaultDaemonStatePath()); err == nil {
+			if hint := pendingRestartHint(email, st); hint != "" {
+				fmt.Printf("\n%s\n", hint)
+			}
+		}
+	}
+
 	fmt.Println("\n== 账号池 ==")
 	accounts, err := pool.List()
 	if err != nil {
@@ -205,6 +213,7 @@ func cmdStatus(args []string) error {
 	accounts = pool.Unique(accounts)
 	if len(accounts) == 0 {
 		fmt.Println("  (空)")
+		printRestartHint()
 		return nil
 	}
 	for _, a := range accounts {
@@ -217,6 +226,7 @@ func cmdStatus(args []string) error {
 	}
 	dir, _ := pool.Dir()
 	fmt.Printf("\n池目录: %s\n", dir)
+	printRestartHint()
 	return nil
 }
 

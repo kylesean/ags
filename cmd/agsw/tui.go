@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -191,7 +192,15 @@ func stopAgy(p *managedAgy, timeout time.Duration) {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	_ = p.cmd.Process.Signal(os.Interrupt)
+	// Windows 的 Process.Signal 只支持 Kill：跳过注定失败的 Interrupt，
+	// 短等待后直接 Kill（调用方传的超时仅作上限）。
+	interrupt, wait := agyStopPlan(runtime.GOOS)
+	if wait < timeout {
+		timeout = wait
+	}
+	if interrupt {
+		_ = p.cmd.Process.Signal(os.Interrupt)
+	}
 	select {
 	case <-p.done:
 		return
@@ -199,6 +208,14 @@ func stopAgy(p *managedAgy, timeout time.Duration) {
 		_ = p.cmd.Process.Kill()
 		<-p.done
 	}
+}
+
+// agyStopPlan 按 OS 决定停止策略，供单测按 goos 断言。
+func agyStopPlan(goos string) (interrupt bool, wait time.Duration) {
+	if goos == "windows" {
+		return false, 2 * time.Second
+	}
+	return true, 5 * time.Second
 }
 
 // cmdTUI 统一启动 Gateway 和 agy，避免用户手动设置 AGY_GATEWAY_URL。

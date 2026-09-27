@@ -127,6 +127,10 @@ agsw use B                  # 手动切换到 B
 agsw use -force C           # 无视额度强行切换
 ```
 
+双终端用法：A 终端跑 `agsw daemon`，B 终端跑原生 `agy`。AI 回复出现额度
+红字时，到 A 终端确认切换行（或在任意终端跑 `agsw status`，不一致会直接
+提示），然后在 B 终端重启 `agy` 并 `/resume` 恢复。
+
 ### 统一启动 (`agsw` TUI)
 
 裸 `agsw` 即 TUI 入口：启动 Gateway，等待本地端口 ready，自动设置

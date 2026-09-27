@@ -116,6 +116,10 @@ agsw use B                  # Manually switch to B (quota verified)
 agsw use -force C           # Switch regardless of quota
 ```
 
+Two-terminal setup: run `agsw daemon` in terminal A and stock `agy` in terminal B.
+When a quota error appears in B, confirm the switch line in A (or run `agsw status`
+anywhere — it warns on mismatch), then restart `agy` in B and `/resume`.
+
 ### Unified Launcher (TUI / `agsw`)
 
 bare `agsw` is the **TUI entry point**: it launches the local Gateway, waits for the port to be ready, configures `AGY_GATEWAY_URL` and `NO_PROXY`, and spawns `agy`. When `agy` exits, the Gateway shuts down cleanly.

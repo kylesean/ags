@@ -2,15 +2,90 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/kylesean/agsw/internal/pool"
 )
+
+// daemonState 是 daemon 每次切换落盘的选中快照，供 status 拉取查证。
+// 用户不看 daemon 终端时，跑一遍 status 即可知道是否要重启。
+type daemonState struct {
+	Name  string    `json:"name"`
+	Email string    `json:"email"`
+	At    time.Time `json:"at"`
+}
+
+func defaultDaemonStatePath() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	return filepath.Join(dir, "agsw", "state.json")
+}
+
+func writeDaemonState(path, name, email string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(daemonState{Name: name, Email: email, At: time.Now().UTC()})
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".state-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func readDaemonState(path string) (*daemonState, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var st daemonState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// pendingRestartHint 比对 keyring 当前身份与 daemon 选中：不一致返回提示行，
+// 一致或无状态返回空串（纯函数，供 status 与单测）。
+func pendingRestartHint(curEmail string, st *daemonState) string {
+	if st == nil || st.Email == "" {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(curEmail), strings.TrimSpace(st.Email)) && curEmail != "" {
+		return ""
+	}
+	return fmt.Sprintf("提示: daemon 已选中 %s (%s)，keyring 仍是旧身份，请重启 agy 生效（/resume 恢复）",
+		st.Name, st.Email)
+}
 
 // cmdDaemon 前台常驻的轻量本体：定期轮询额度 → keyring 写健康号。
 // 不碰流量、不托管 agy；切换后提醒重启（交互式 /resume 恢复）。
@@ -84,6 +159,9 @@ func daemonSyncOnce(ctx context.Context, sel *pool.Selector, lg *log.Logger) (bo
 	}
 	if err := syncKeyringAccount(accountSwitch{name: best.Name, email: best.Email}); err != nil {
 		return false, err
+	}
+	if err := writeDaemonState(defaultDaemonStatePath(), best.Name, best.Email); err != nil {
+		lg.Printf("落盘选中状态失败: %v", err)
 	}
 	lg.Printf("已切换 keyring → %s (%s)，请重启 agy 生效（交互式 /resume 恢复）", best.Name, best.Email)
 	return true, nil
