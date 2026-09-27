@@ -259,9 +259,7 @@ type tuiOptions struct {
 	stripFields  stringList
 }
 
-func parseTUIArgs(args []string) (tuiOptions, []string, error) {
-	var o tuiOptions
-	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
+func registerTUIFlags(fs *flag.FlagSet, o *tuiOptions) {
 	fs.StringVar(&o.listen, "listen", "127.0.0.1:7897", "Gateway 监听地址")
 	fs.StringVar(&o.upstream, "upstream", DefaultUpstream, "上游地址")
 	fs.StringVar(&o.account, "account", "", "只使用指定账号")
@@ -275,10 +273,113 @@ func parseTUIArgs(args []string) (tuiOptions, []string, error) {
 	fs.BoolVar(&o.noModelAlias, "no-model-alias", false, "不拉取模型表")
 	fs.BoolVar(&o.syncKeyring, "sync-keyring", true, "切换账号时同步 Keyring 并重启 agy")
 	fs.Var(&o.stripFields, "strip-field", "转发前从请求体顶层删掉这个 JSON 字段，可重复")
-	if err := fs.Parse(args); err != nil {
-		return o, nil, err
+}
+
+// parseTUIArgs 容忍式解析：tui 认识的 flag 归 tui，不认识的（含 agy 的）
+// 一律透传给 agy；`--` 之后全部归 agy。已知 flag 的值非法时仍报错，
+// 避免把 `-quota-interval=abc` 这类笔误悄悄送进 agy。
+func parseTUIArgs(args []string) (tuiOptions, []string, error) {
+	o := tuiOptions{
+		listen:      "127.0.0.1:7897",
+		upstream:    DefaultUpstream,
+		logFile:     defaultTUILogPath(),
+		ua:          defaultUserAgent,
+		interval:    DefaultQuotaInterval,
+		syncKeyring: true,
 	}
-	return o, fs.Args(), nil
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			return o, append([]string{}, args[i+1:]...), nil
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			// 首个位置参数：与 flag 包语义一致，余下全部归 agy。
+			return o, append([]string{arg}, args[i+1:]...), nil
+		}
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		switch name {
+		case "h", "help":
+			usage := flag.NewFlagSet("tui", flag.ContinueOnError)
+			registerTUIFlags(usage, &tuiOptions{})
+			fmt.Fprintln(os.Stderr, "Usage of tui:")
+			usage.PrintDefaults()
+			return o, nil, flag.ErrHelp
+		case "v", "refresh", "passthrough", "no-model-alias", "sync-keyring":
+			b := true
+			if hasValue {
+				var err error
+				if b, err = strconv.ParseBool(value); err != nil {
+					return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+				}
+			}
+			switch name {
+			case "v":
+				o.verbose = b
+			case "refresh":
+				o.refresh = b
+			case "passthrough":
+				o.passthrough = b
+			case "no-model-alias":
+				o.noModelAlias = b
+			case "sync-keyring":
+				o.syncKeyring = b
+			}
+		case "listen", "upstream", "account", "log-file", "user-agent", "strip-field":
+			if !hasValue {
+				i++
+				if i >= len(args) {
+					return o, nil, fmt.Errorf("-%s 缺少值", name)
+				}
+				value = args[i]
+			}
+			switch name {
+			case "listen":
+				o.listen = value
+			case "upstream":
+				o.upstream = value
+			case "account":
+				o.account = value
+			case "log-file":
+				o.logFile = value
+			case "user-agent":
+				o.ua = value
+			case "strip-field":
+				if err := o.stripFields.Set(value); err != nil {
+					return o, nil, err
+				}
+			}
+		case "quota-interval":
+			if !hasValue {
+				i++
+				if i >= len(args) {
+					return o, nil, fmt.Errorf("-%s 缺少值", name)
+				}
+				value = args[i]
+			}
+			d, err := time.ParseDuration(value)
+			if err != nil {
+				return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+			}
+			o.interval = d
+		case "quota-threshold":
+			if !hasValue {
+				i++
+				if i >= len(args) {
+					return o, nil, fmt.Errorf("-%s 缺少值", name)
+				}
+				value = args[i]
+			}
+			f, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+			}
+			o.threshold = f
+		default:
+			// 不认识：一律归 agy，本参数与其后续位置参数由 agy 自行解释。
+			return o, append([]string{arg}, args[i+1:]...), nil
+		}
+	}
+	return o, nil, nil
 }
 
 func (o tuiOptions) serveArgs() []string {

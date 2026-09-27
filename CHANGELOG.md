@@ -3,6 +3,11 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.4.2] - 2026-09-27
+
+### Fixed
+- **TUI 未知 flag 透传 agy**：`agsw --dangerously-skip-permissions` 这类 agy 参数不再报错进帮助界面；只有 `--` 仍可强制其后全归 agy。
+
 ## [v0.4.1] - 2026-09-27
 
 ### Added

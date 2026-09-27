@@ -51,7 +51,7 @@ agsw daemon -quota-threshold 0.002  # Switch early below this; default 0 (empty 
 agsw daemon -account A              # Watch a single account
 agsw use -force C                   # Switch regardless of quota
 agsw -sync-keyring=false            # TUI: never touch Keyring, no auto-restart
-agsw -- --print 'hi'                # Everything after -- goes to agy
+agsw --print 'hi'                 # agy flags pass through (-- also works)
 ```
 
 ## Notes

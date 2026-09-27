@@ -51,7 +51,7 @@ agsw daemon -quota-threshold 0.002  # 剩余额度低于此提前切，默认 0�
 agsw daemon -account A              # 只看管指定账号
 agsw use -force C                   # 无视额度强行切换
 agsw -sync-keyring=false            # TUI 不写 Keyring、不自动重启
-agsw -- --print 'hi'                # -- 后透传任意 agy 参数
+agsw --print 'hi'                 # agy 参数直接透传（-- 后也行）
 ```
 
 ## 注意
