@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // daemonState 是 daemon 每次切换落盘的选中快照，供 status 拉取查证。
@@ -27,7 +27,7 @@ func defaultDaemonStatePath() string {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "agsw", "state.json")
+	return filepath.Join(dir, "ags", "state.json")
 }
 
 func writeDaemonState(path, name, email string) error {
@@ -119,7 +119,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		}
 		cands = pool.Unique(accounts)
 		if len(cands) == 0 {
-			return fmt.Errorf("账号池为空，先 agsw login <name> 或 agsw add <name>")
+			return fmt.Errorf("账号池为空，先 ags login <name> 或 ags add <name>")
 		}
 	}
 

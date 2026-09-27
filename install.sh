@@ -1,14 +1,14 @@
 #!/bin/sh
-# agsw installer
+# ags installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/kylesean/agsw/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/kylesean/ags/main/install.sh | sh
 #
 # Custom options:
-#   AGSW_VERSION=v0.3.0 BINDIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/kylesean/agsw/main/install.sh | sh
+#   AGS_VERSION=v0.5.0 BINDIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/kylesean/ags/main/install.sh | sh
 
 set -eu
 
-REPO="kylesean/agsw"
+REPO="kylesean/ags"
 
 # Colors for terminal output
 if [ -t 1 ]; then
@@ -63,7 +63,7 @@ esac
 info "检测到运行环境: ${OS}/${ARCH}"
 
 # 3. Resolve Version
-VERSION="${AGSW_VERSION:-}"
+VERSION="${AGS_VERSION:-}"
 if [ -z "$VERSION" ]; then
   info "正在获取最新版本号..."
   # Try redirect location first (bypasses GitHub API rate limit)
@@ -76,14 +76,14 @@ if [ -z "$VERSION" ]; then
     if [ -n "$TAG" ]; then
       VERSION="$TAG"
     else
-      err "获取最新版本号失败，请检查网络或通过环境变量指定版本: AGSW_VERSION=v0.3.0"
+      err "获取最新版本号失败，请检查网络或通过环境变量指定版本: AGS_VERSION=v0.5.0"
     fi
   fi
 fi
 
 # Strip leading 'v' for archive naming (e.g. v0.3.0 -> 0.3.0)
 CLEAN_VER="${VERSION#v}"
-ARCHIVE_NAME="agsw_${CLEAN_VER}_${OS}_${ARCH}.tar.gz"
+ARCHIVE_NAME="ags_${CLEAN_VER}_${OS}_${ARCH}.tar.gz"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
 CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
 
@@ -129,11 +129,11 @@ if curl -fsSL "$CHECKSUMS_URL" -o "${TMP_DIR}/checksums.txt" 2>/dev/null; then
 fi
 
 # 6. Extract and Install
-tar -xzf "${TMP_DIR}/${ARCHIVE_NAME}" -C "$TMP_DIR" agsw || err "解压失败"
-mv "${TMP_DIR}/agsw" "${INSTALL_DIR}/agsw"
-chmod +x "${INSTALL_DIR}/agsw"
+tar -xzf "${TMP_DIR}/${ARCHIVE_NAME}" -C "$TMP_DIR" ags || err "解压失败"
+mv "${TMP_DIR}/ags" "${INSTALL_DIR}/ags"
+chmod +x "${INSTALL_DIR}/ags"
 
-success "安装成功: ${INSTALL_DIR}/agsw"
+success "安装成功: ${INSTALL_DIR}/ags"
 
 # 7. Check PATH
 case ":${PATH}:" in
@@ -146,9 +146,9 @@ case ":${PATH}:" in
 esac
 
 echo ""
-printf "${GREEN}${BOLD}agsw ${VERSION} 已就绪！${RESET}\n"
+printf "${GREEN}${BOLD}ags ${VERSION} 已就绪！${RESET}\n"
 echo "快速开始:"
-echo "  agsw        # 启动 Gateway 并拉起 agy"
-echo "  agsw list   # 查看当前账号池状态"
-echo "  agsw usage  # 实时查询账号真实额度"
-echo "  agsw -h     # 查看完整帮助"
+echo "  ags daemon    # 轮询额度并同步 Keyring"
+echo "  ags list      # 查看当前账号池状态"
+echo "  ags usage     # 实时查询账号真实额度"
+echo "  ags -h        # 查看完整帮助"

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kylesean/agsw/internal/keyring"
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/keyring"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // gatewayURL 把监听地址转换成 agy 可用的本地 Gateway URL。
@@ -66,7 +66,7 @@ func defaultTUILogPath() string {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "agsw", "tui.log")
+	return filepath.Join(dir, "ags", "tui.log")
 }
 
 func openLogFile(path string) (*os.File, error) {
@@ -412,7 +412,7 @@ func (o tuiOptions) serveArgs() []string {
 	return serveArgs
 }
 
-// 用法：agsw [serve flags] [-- agy flags]
+// 用法：ags [serve flags] [-- agy flags]
 func cmdTUI(ctx context.Context, args []string) error {
 	o, agyArgs, err := parseTUIArgs(args)
 	if err != nil {

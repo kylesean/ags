@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // : 默认轮询间隔 3m + 抖动；429 单号即查。
@@ -52,7 +52,7 @@ func TestTriggerSingleAccount(t *testing.T) {
 		{Name: "A", Email: "a@x", AccessToken: "TOK-A", Expiry: now.Add(time.Hour)},
 		{Name: "B", Email: "b@x", AccessToken: "TOK-B", Expiry: now.Add(time.Hour)},
 	}, nil)
-	qw := newQuotaWatcher(sel, up.URL, "agsw-test", 0, log.New(discardWriter{}, "", 0))
+	qw := newQuotaWatcher(sel, up.URL, "ags-test", 0, log.New(discardWriter{}, "", 0))
 	qw.checkOne(context.Background(), "A")
 	mu.Lock()
 	defer mu.Unlock()

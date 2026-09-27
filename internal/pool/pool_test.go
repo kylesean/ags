@@ -36,11 +36,11 @@ func TestUniquePrefersFreshCredentialPerEmail(t *testing.T) {
 	}
 }
 
-// withTmpDir 把池重定向到临时目录，绝不碰真实 ~/.local/share/agsw。
+// withTmpDir 把池重定向到临时目录，绝不碰真实 ~/.local/share/ags。
 func withTmpDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("AGSW_DATA_DIR", dir)
+	t.Setenv("AGS_DATA_DIR", dir)
 	return dir
 }
 

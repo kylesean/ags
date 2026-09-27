@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/quota"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/quota"
 )
 
 func formatUsageLine(a *pool.Account, sum *quota.Summary) string {

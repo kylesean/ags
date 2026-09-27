@@ -1,4 +1,4 @@
-# agsw
+# ags
 
 [中文](README.md) | **English**
 
@@ -8,10 +8,10 @@ Multi-account switcher for `agy`: keep several Google accounts in a local pool; 
 
 ```sh
 # One-liner (Linux / macOS, recommended)
-curl -fsSL https://raw.githubusercontent.com/kylesean/agsw/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kylesean/ags/main/install.sh | sh
 
 # Go toolchain
-go install github.com/kylesean/agsw/cmd/agsw@latest
+go install github.com/kylesean/ags/cmd/ags@latest
 
 # Prebuilt archives: download from GitHub Releases and drop into PATH
 # Windows users: grab the zip from Releases
@@ -20,38 +20,38 @@ go install github.com/kylesean/agsw/cmd/agsw@latest
 ## Quickstart
 
 ```sh
-agsw login A && agsw login B   # Pool two accounts (or capture via agsw add <name>)
+ags login A && ags login B   # Pool two accounts (or capture via ags add <name>)
 
 # Terminal A: stay on duty
-agsw daemon
+ags daemon
 
 # Terminal B: launch stock agy, use it normally
 agy
 ```
 
-When quota runs out, the AI reply shows an error. Confirm the switch line in terminal A (or run `agsw status` anywhere), restart `agy` in terminal B, then `/resume` to restore. In a hurry: `agsw use B` switches manually.
+When quota runs out, the AI reply shows an error. Confirm the switch line in terminal A (or run `ags status` anywhere), restart `agy` in terminal B, then `/resume` to restore. In a hurry: `ags use B` switches manually.
 
 ## Commands
 
 | Command       | Description                                              |
 | ------------- | -------------------------------------------------------- |
-| `agsw login`  | Standalone OAuth login into the pool (`login [-email m@g] <name>`) |
-| `agsw add`    | Import current system Keyring credentials into the pool  |
-| `agsw list` / `status` / `drop` / `usage` | List / inspect / remove / quota-check accounts |
-| `agsw use B`  | Verify quota, then switch the Keyring to B (`--force` overrides) |
-| `agsw daemon` | Foreground loop: poll quotas and sync the Keyring        |
-| `agsw serve`  | Reverse proxy (one retry on 429, optional)               |
-| `agsw`        | TUI: launch the Gateway and manage `agy`                 |
+| `ags login`  | Standalone OAuth login into the pool (`login [-email m@g] <name>`) |
+| `ags add`    | Import current system Keyring credentials into the pool  |
+| `ags list` / `status` / `drop` / `usage` | List / inspect / remove / quota-check accounts |
+| `ags use B`  | Verify quota, then switch the Keyring to B (`--force` overrides) |
+| `ags daemon` | Foreground loop: poll quotas and sync the Keyring        |
+| `ags serve`  | Reverse proxy (one retry on 429, optional)               |
+| `ags`        | TUI: launch the Gateway and manage `agy`                 |
 
 ## Common options
 
 ```sh
-agsw daemon -quota-interval 5m      # Poll interval, default 3m (±25% jitter)
-agsw daemon -quota-threshold 0.002  # Switch early below this; default 0 (empty only)
-agsw daemon -account A              # Watch a single account
-agsw use -force C                   # Switch regardless of quota
-agsw -sync-keyring=false            # TUI: never touch Keyring, no auto-restart
-agsw --print 'hi'                 # agy flags pass through (-- also works)
+ags daemon -quota-interval 5m      # Poll interval, default 3m (±25% jitter)
+ags daemon -quota-threshold 0.002  # Switch early below this; default 0 (empty only)
+ags daemon -account A              # Watch a single account
+ags use -force C                   # Switch regardless of quota
+ags -sync-keyring=false            # TUI: never touch Keyring, no auto-restart
+ags --print 'hi'                 # agy flags pass through (-- also works)
 ```
 
 ## Notes

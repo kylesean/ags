@@ -1,4 +1,4 @@
-// agsw — Antigravity (agy) 多账号切换器。
+// ags — Antigravity (agy) 多账号切换器。
 //
 // 核心能力：
 //   - 账号池私有持久化（目录 0700、文件 0600）
@@ -17,11 +17,11 @@ import (
 	"syscall"
 )
 
-const usage = `agsw — agy 多账号切换器
+const usage = `ags — agy 多账号切换器
 
 用法:
-  agsw                 直接启动 TUI 并拉起 agy
-  agsw <命令> [参数]  执行指定子命令
+  ags                 直接启动 TUI 并拉起 agy
+  ags <命令> [参数]  执行指定子命令
 
 命令:
   probe    启动拦截探针（观察线格式与协议交互）
@@ -34,7 +34,7 @@ const usage = `agsw — agy 多账号切换器
   use      验额后切换系统 Keyring 到指定账号（手动范式）
   daemon   前台常驻：轮询额度并同步 Keyring（轻量本体）
   serve    启动反向代理（凭据注入、信封改写与自动切号）
-  tui      启动 TUI 并自动拉起 agy（默认入口，即裸 agsw）
+  tui      启动 TUI 并自动拉起 agy（默认入口，即裸 ags）
 
 各命令用 "<命令> -h" 查看参数。
 `
@@ -91,7 +91,7 @@ func main() {
 		if err == flag.ErrHelp {
 			os.Exit(0)
 		}
-		fmt.Fprintln(os.Stderr, "agsw: "+err.Error())
+		fmt.Fprintln(os.Stderr, "ags: "+err.Error())
 		os.Exit(1)
 	}
 }

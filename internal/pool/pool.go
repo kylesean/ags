@@ -42,12 +42,19 @@ type Account struct {
 	CooldownUntil  time.Time `json:"-"`
 	LastQuotaCheck time.Time `json:"-"`
 	// KeyringFallback 标记该对象是池空时由系统 Keyring 回落的内存伪账号，
-	// 而非磁盘文件。绝不持久化；刷新不落盘、gui 不同步回写（本就来自 keyring）。
+	// 而非磁盘文件。绝不持久化；刷新不落盘、tui 不同步回写（本就来自 keyring）。
 	KeyringFallback bool `json:"-"`
 }
 
-// Dir 返回账号池目录。环境变量 AGSW_DATA_DIR 可覆盖，便于测试。
+// legacyPoolDir 是改名前的数据目录，迁移用一次即弃。
+func legacyPoolDir(xdg string) string { return filepath.Join(xdg, "agsw", "pool") }
+
+// Dir 返回账号池目录。AGS_DATA_DIR 可覆盖（兼容旧 AGSW_DATA_DIR），便于测试。
+// 默认路径改名后，旧 agsw 目录若存在则一次性自动迁走，数据不丢。
 func Dir() (string, error) {
+	if base := os.Getenv("AGS_DATA_DIR"); base != "" {
+		return filepath.Join(base, "pool"), nil
+	}
 	if base := os.Getenv("AGSW_DATA_DIR"); base != "" {
 		return filepath.Join(base, "pool"), nil
 	}
@@ -59,7 +66,18 @@ func Dir() (string, error) {
 		}
 		xdg = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(xdg, "agsw", "pool"), nil
+	dir := filepath.Join(xdg, "ags", "pool")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if legacy, lerr := os.Stat(legacyPoolDir(xdg)); lerr == nil && legacy.IsDir() {
+			if merr := os.MkdirAll(filepath.Dir(dir), dirPerm); merr != nil {
+				return "", fmt.Errorf("迁移旧数据目录失败: %w", merr)
+			}
+			if merr := os.Rename(legacyPoolDir(xdg), dir); merr != nil {
+				return "", fmt.Errorf("迁移旧数据目录失败: %w", merr)
+			}
+		}
+	}
+	return dir, nil
 }
 
 // ValidateName 校验账号名合法性，拒绝非法字符与路径分隔符。
@@ -195,7 +213,7 @@ func List() ([]*Account, error) {
 		if err != nil {
 			// 单个损坏文件不应让整个 list 挂掉，但必须留痕，
 			// 否则账号“凭空消失”无从排查。
-			log.Printf("agsw: 跳过损坏的账号文件 %s: %v", e.Name(), err)
+			log.Printf("ags: 跳过损坏的账号文件 %s: %v", e.Name(), err)
 			continue
 		}
 		out = append(out, a)

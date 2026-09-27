@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kylesean/agsw/internal/oauth"
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/oauth"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // cmdLogin 自己走一遍 Google OAuth（授权码 + PKCE + 本地回环回调），把号直接写进池。
@@ -16,7 +16,7 @@ import (
 // 也没有「必须在登录后立刻 add」的顺序坑。
 //
 // 万一 Antigravity 的 client_id/secret 哪天被轮换，回退路径是
-// 「agy 登录 → agsw add」，那条路保留不删。
+// 「agy 登录 → ags add」，那条路保留不删。
 func cmdLogin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	timeout := fs.Duration("timeout", 5*time.Minute, "等待浏览器完成登录的超时")
@@ -28,7 +28,7 @@ func cmdLogin(ctx context.Context, args []string) error {
 	if fs.NArg() != 1 {
 		// Go 的 flag 包遇到第一个非 flag 参数即停止解析，
 		// 所以标志必须写在 <name> 前面 —— 用法串必须如实反映。
-		return fmt.Errorf("用法: agsw login [-timeout 5m] [-no-browser] [-email you@example.com] <name>\n（标志要写在 <name> 前面）")
+		return fmt.Errorf("用法: ags login [-timeout 5m] [-no-browser] [-email you@example.com] <name>\n（标志要写在 <name> 前面）")
 	}
 	name := fs.Arg(0)
 	if err := pool.ValidateName(name); err != nil {
@@ -37,7 +37,7 @@ func cmdLogin(ctx context.Context, args []string) error {
 
 	// 与 add 同样防覆盖：已存在的名字要求显式 drop，避免误冲。
 	if _, err := pool.Load(name); err == nil {
-		return fmt.Errorf("池里已有 %q，要覆盖请先 agsw drop %s", name, name)
+		return fmt.Errorf("池里已有 %q，要覆盖请先 ags drop %s", name, name)
 	}
 
 	fmt.Printf("开始登录 → %s\n", name)
@@ -56,7 +56,7 @@ func cmdLogin(ctx context.Context, args []string) error {
 		return fmt.Errorf("登录成功但检查邮箱失败（凭据未保存）: %w", err)
 	}
 	if existing != nil {
-		return fmt.Errorf("邮箱 %s 已存在（账号 %s），请使用不同 Google 账号；如需替换请先 agsw drop %s", res.Email, existing.Name, existing.Name)
+		return fmt.Errorf("邮箱 %s 已存在（账号 %s），请使用不同 Google 账号；如需替换请先 ags drop %s", res.Email, existing.Name, existing.Name)
 	}
 
 	// 与 add 完全一致的池文件 schema，serve/pool/quota 零改动。

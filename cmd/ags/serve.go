@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kylesean/agsw/internal/cloudcode"
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/proxy"
-	"github.com/kylesean/agsw/internal/token"
+	"github.com/kylesean/ags/internal/cloudcode"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/proxy"
+	"github.com/kylesean/ags/internal/token"
 )
 
 // stringList 让 -strip-field 可以重复出现，例如
@@ -488,7 +488,7 @@ func refreshAccount(ctx context.Context, a *pool.Account) error {
 	}
 	exists, err := pool.Exists(a.Name)
 	if err == nil && !exists {
-		// 账号已被外部删除（如 agsw drop），不再落盘复活
+		// 账号已被外部删除（如 ags drop），不再落盘复活
 		return nil
 	}
 	return pool.Save(a)

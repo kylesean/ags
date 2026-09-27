@@ -175,7 +175,7 @@ func TestPickEmptyPoolExplainsWhatToDo(t *testing.T) {
 	if err == nil {
 		t.Fatal("空池应报错")
 	}
-	if !strings.Contains(err.Error(), "agsw add") {
+	if !strings.Contains(err.Error(), "ags add") {
 		t.Errorf("错误应给出下一步操作提示: %v", err)
 	}
 }

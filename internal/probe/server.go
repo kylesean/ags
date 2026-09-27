@@ -85,7 +85,7 @@ func (s *HTTPServer) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"error": "agsw-probe: no upstream configured (observation only)",
+			"error": "ags-probe: no upstream configured (observation only)",
 		})
 		return
 	}
@@ -112,7 +112,7 @@ func (s *HTTPServer) forward(w http.ResponseWriter, r *http.Request, body []byte
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "agsw-probe forward: " + err.Error(),
+				"error": "ags-probe forward: " + err.Error(),
 			})
 		},
 	}

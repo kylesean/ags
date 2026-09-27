@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/token"
+	"github.com/kylesean/ags/internal/token"
 )
 
 // ---------- 配置 ----------

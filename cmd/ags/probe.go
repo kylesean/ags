@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kylesean/agsw/internal/probe"
+	"github.com/kylesean/ags/internal/probe"
 )
 
 // cmdProbe 启动拦截探针。
@@ -36,7 +36,7 @@ func cmdProbe(ctx context.Context, args []string) error {
 
 	logPath := *out
 	if logPath == "" {
-		f, err := os.CreateTemp("", "agsw-probe-*.jsonl")
+		f, err := os.CreateTemp("", "ags-probe-*.jsonl")
 		if err != nil {
 			return fmt.Errorf("建日志文件失败: %w", err)
 		}

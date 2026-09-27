@@ -138,7 +138,7 @@ func New(rawUpstream string, picker Picker, lg *log.Logger) (*Server, error) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "agsw proxy: " + err.Error(),
+				"error": "ags proxy: " + err.Error(),
 			})
 		},
 		// 上游报错时把响应体记下来。agy 只转述 message，
@@ -508,7 +508,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(s.stripFields) > 0 {
 		if err := s.rewriteBody(r); err != nil {
 			s.log.Printf("改写请求体失败 %s%s: %v", r.Host, r.URL.Path, err)
-			s.writeBadRequest(w, "agsw: 改写请求体失败: "+err.Error())
+			s.writeBadRequest(w, "ags: 改写请求体失败: "+err.Error())
 			return
 		}
 	}
@@ -518,7 +518,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.envelope {
 		if err := s.applyEnvelope(r); err != nil {
 			s.log.Printf("信封改写失败 %s%s: %v", r.Host, r.URL.Path, err)
-			s.writeBadRequest(w, "agsw: "+err.Error())
+			s.writeBadRequest(w, "ags: "+err.Error())
 			return
 		}
 	}

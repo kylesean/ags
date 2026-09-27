@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/keyring"
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/keyring"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 func healthyUpstream(t *testing.T) *httptest.Server {
@@ -44,7 +44,7 @@ func seedUseAccount(t *testing.T, name string) {
 
 // : 有额度时 use 应写入 keyring。
 func TestUseHealthyWritesKeyring(t *testing.T) {
-	t.Setenv("AGSW_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	up := healthyUpstream(t)
 	defer up.Close()
 	seedUseAccount(t, "B")
@@ -62,7 +62,7 @@ func TestUseHealthyWritesKeyring(t *testing.T) {
 
 // : 无额度时 use 应拒绝（除非 --force），且不写 keyring。
 func TestUseExhaustedRefuses(t *testing.T) {
-	t.Setenv("AGSW_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	up := exhaustedUpstream(t)
 	defer up.Close()
 	seedUseAccount(t, "B")

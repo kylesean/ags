@@ -188,7 +188,7 @@ func (s *Selector) Pick(ctx context.Context) (*Account, error) {
 
 	s.lastErrs = errors.Join(errs...)
 	if len(errs) == 0 {
-		return nil, errors.New("账号池为空（先用 agsw add <name> 捕获一个）")
+		return nil, errors.New("账号池为空（先用 ags add <name> 捕获一个）")
 	}
 	return nil, fmt.Errorf("没有可用账号: %w", s.lastErrs)
 }

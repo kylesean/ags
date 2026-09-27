@@ -19,6 +19,9 @@ func setEndpoint(u string) {
 }
 
 func currentEndpoint() string {
+	if env := os.Getenv("AGS_TOKEN_URL"); env != "" {
+		return env
+	}
 	if env := os.Getenv("AGSW_TOKEN_URL"); env != "" {
 		return env
 	}

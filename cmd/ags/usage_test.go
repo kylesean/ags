@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/quota"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/quota"
 )
 
 func TestFormatUsageLineIncludesQuotaWindows(t *testing.T) {

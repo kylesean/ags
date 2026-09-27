@@ -3,6 +3,11 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.5.0] - 2026-09-27
+
+### Changed
+- **彻底改名 `agsw` → `ags`**：二进制、仓库、Go module、环境变量（`AGS_*`，兼容旧 `AGSW_*`）、数据目录（旧 `~/.local/share/agsw` 自动迁走）全统一；`agsw gui` 早已移除，历史版本见下。
+
 ## [v0.4.2] - 2026-09-27
 
 ### Fixed

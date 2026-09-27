@@ -173,7 +173,7 @@ func TestErrorHandlerReturnsJSON(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q", ct)
 	}
-	if !strings.Contains(rec.Body.String(), "agsw proxy") {
+	if !strings.Contains(rec.Body.String(), "ags proxy") {
 		t.Errorf("body = %s", rec.Body.String())
 	}
 }

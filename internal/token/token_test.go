@@ -84,8 +84,8 @@ func TestRefreshWithDefaultClientIncludesClientSecret(t *testing.T) {
 }
 
 func TestDefaultCredentialsEnvOverride(t *testing.T) {
-	t.Setenv("AGSW_CLIENT_ID", "env-cid")
-	t.Setenv("AGSW_CLIENT_SECRET", "env-secret")
+	t.Setenv("AGS_CLIENT_ID", "env-cid")
+	t.Setenv("AGS_CLIENT_SECRET", "env-secret")
 
 	if got := DefaultClientID(); got != "env-cid" {
 		t.Errorf("DefaultClientID() = %q, want env-cid", got)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // RED: 401 应打短冷却（30s）并触发额度检查，对齐 429。
@@ -46,7 +46,7 @@ func TestQuotaCheckPreserves429Cooldown(t *testing.T) {
 	sel := pool.NewSelector([]*pool.Account{a}, nil)
 	// 模拟 429 刚打的 1m 冷却
 	sel.SetCooldown("A", time.Now().Add(time.Minute))
-	qw := newQuotaWatcher(sel, up.URL, "agsw-test", 0, log.New(discardWriter{}, "", 0))
+	qw := newQuotaWatcher(sel, up.URL, "ags-test", 0, log.New(discardWriter{}, "", 0))
 	qw.check(context.Background(), false)
 	if got := sel.CooldownOf("A"); got.IsZero() || time.Until(got) < 30*time.Second {
 		t.Fatalf("健康轮询不应清掉 429 冷却，got %v", got)

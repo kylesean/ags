@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/kylesean/agsw/internal/keyring"
+	"github.com/kylesean/ags/internal/keyring"
 )
 
 // keyringCurrentAdapter 把 keyring 的返回值适配给 serve 命令，

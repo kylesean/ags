@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/quota"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/quota"
 )
 
 // quotaWatcher 定期查池中每个账号的 GEMINI 额度，耗尽就打冷却、恢复就解冻。

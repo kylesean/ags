@@ -1,4 +1,4 @@
-module github.com/kylesean/agsw
+module github.com/kylesean/ags
 
 go 1.22.0
 

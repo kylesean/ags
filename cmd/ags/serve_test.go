@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/proxy"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/proxy"
 )
 
 func TestSelectorPickerReportsAccountSwitchOnce(t *testing.T) {
@@ -87,7 +87,7 @@ func TestSelectorPickerDefersSwitchUntilRequestFinishes(t *testing.T) {
 }
 
 func TestRefreshAccountDoesNotResurrectDeletedAccount(t *testing.T) {
-	t.Setenv("AGSW_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	a := &pool.Account{
 		Name:         "dropped",
 		Email:        "dropped@example.com",
@@ -104,7 +104,7 @@ func TestRefreshAccountDoesNotResurrectDeletedAccount(t *testing.T) {
 		})
 	}))
 	defer up.Close()
-	t.Setenv("AGSW_TOKEN_URL", up.URL)
+	t.Setenv("AGS_TOKEN_URL", up.URL)
 
 	if err := refreshAccount(context.Background(), a); err != nil {
 		t.Fatalf("refreshAccount: %v", err)

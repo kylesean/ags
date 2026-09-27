@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kylesean/agsw/internal/token"
+	"github.com/kylesean/ags/internal/token"
 )
 
 // DefaultClientID 返回内置的客户端 ID。
@@ -353,11 +353,11 @@ type authResult struct {
 
 const callbackOKHTML = `<!doctype html>
 <meta charset="utf-8">
-<title>agsw 登录完成</title>
+<title>ags 登录完成</title>
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:32em;margin:4em auto;padding:0 1em;color:#222}
 .ok{color:#0a7a3d;font-size:2em}</style>
 <p class="ok">✓ 登录完成</p>
-<p>凭据已交给 agsw，可以关掉这个标签页、回到终端了。</p>
+<p>凭据已交给 ags，可以关掉这个标签页、回到终端了。</p>
 `
 
 // exchangeCode 用授权码换 token。

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kylesean/agsw/internal/pool"
-	"github.com/kylesean/agsw/internal/quota"
+	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/quota"
 )
 
 // cmdUse 把指定账号设为系统 Keyring 当前身份（agy 唯一授权槽）。
@@ -23,7 +23,7 @@ func cmdUse(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("用法: agsw use [--force] <name>")
+		return fmt.Errorf("用法: ags use [--force] <name>")
 	}
 	if *timeout <= 0 {
 		return fmt.Errorf("-timeout 必须大于 0")

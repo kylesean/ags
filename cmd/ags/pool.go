@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kylesean/agsw/internal/keyring"
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/keyring"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // cmdAdd 把当前 keyring 里的凭据捕获进账号池。
 //
-// 注册第二个号的流程：先在 agy 里正常登一次该号，然后 agsw add <name>。
+// 注册第二个号的流程：先在 agy 里正常登一次该号，然后 ags add <name>。
 // 捕获之后那个号就永久免登了。
 func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
@@ -20,7 +20,7 @@ func cmdAdd(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("用法: agsw add <name>")
+		return fmt.Errorf("用法: ags add <name>")
 	}
 	name := fs.Arg(0)
 	if err := pool.ValidateName(name); err != nil {
@@ -29,7 +29,7 @@ func cmdAdd(args []string) error {
 
 	// 幂等：同名账号要求显式覆盖，避免误冲。
 	if _, err := pool.Load(name); err == nil {
-		return fmt.Errorf("池里已有 %q，要覆盖请先 agsw drop %s", name, name)
+		return fmt.Errorf("池里已有 %q，要覆盖请先 ags drop %s", name, name)
 	}
 
 	sec, email, err := keyring.Current()
@@ -41,7 +41,7 @@ func cmdAdd(args []string) error {
 		return fmt.Errorf("检查邮箱是否已在账号池失败: %w", err)
 	}
 	if existing != nil {
-		return fmt.Errorf("邮箱 %s 已存在（账号 %s），请使用不同 Google 账号；如需替换请先 agsw drop %s", email, existing.Name, existing.Name)
+		return fmt.Errorf("邮箱 %s 已存在（账号 %s），请使用不同 Google 账号；如需替换请先 ags drop %s", email, existing.Name, existing.Name)
 	}
 	claims, err := sec.Claims()
 	if err != nil {
@@ -94,7 +94,7 @@ func cmdList(args []string) error {
 	if len(accounts) == 0 {
 		dir, _ := pool.Dir()
 		fmt.Printf("账号池为空（%s）\n", dir)
-		fmt.Println("用法: 先在 agy 登录某号，再 agsw add <name>")
+		fmt.Println("用法: 先在 agy 登录某号，再 ags add <name>")
 		return nil
 	}
 
@@ -237,7 +237,7 @@ func cmdDrop(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("用法: agsw drop <name>")
+		return fmt.Errorf("用法: ags drop <name>")
 	}
 	name := fs.Arg(0)
 	if err := pool.Delete(name); err != nil {

@@ -43,16 +43,22 @@ func unmask(b []byte, key byte) string {
 	return string(res)
 }
 
-// DefaultClientID 返回 OAuth 客户端 ID。优先从环境变量 AGSW_CLIENT_ID 获取，缺省时使用预设值。
+// DefaultClientID 返回 OAuth 客户端 ID。优先 AGS_CLIENT_ID（兼容旧 AGSW_CLIENT_ID），缺省用预设值。
 func DefaultClientID() string {
+	if v := os.Getenv("AGS_CLIENT_ID"); v != "" {
+		return v
+	}
 	if v := os.Getenv("AGSW_CLIENT_ID"); v != "" {
 		return v
 	}
 	return unmask(maskedClientID, 0x5a)
 }
 
-// DefaultClientSecret 返回 OAuth 客户端密钥。优先从环境变量 AGSW_CLIENT_SECRET 获取，缺省时使用预设值。
+// DefaultClientSecret 返回 OAuth 客户端密钥。优先 AGS_CLIENT_SECRET（兼容旧 AGSW_CLIENT_SECRET），缺省用预设值。
 func DefaultClientSecret() string {
+	if v := os.Getenv("AGS_CLIENT_SECRET"); v != "" {
+		return v
+	}
 	if v := os.Getenv("AGSW_CLIENT_SECRET"); v != "" {
 		return v
 	}

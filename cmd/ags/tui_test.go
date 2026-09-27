@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylesean/agsw/internal/keyring"
-	"github.com/kylesean/agsw/internal/pool"
+	"github.com/kylesean/ags/internal/keyring"
+	"github.com/kylesean/ags/internal/pool"
 )
 
 func TestGatewayURLUsesLoopbackForWildcardListen(t *testing.T) {
@@ -58,7 +58,7 @@ func TestIsOneShotAgy(t *testing.T) {
 }
 
 func TestSyncKeyringAccountUsesPoolCredentials(t *testing.T) {
-	t.Setenv("AGSW_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	a := &pool.Account{
 		Name: "B", Email: "b@example.com", AccessToken: "at", RefreshToken: "rt",
 		IDToken: "id", AuthMethod: "consumer", Expiry: time.Now().Add(time.Hour),
