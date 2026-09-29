@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.5.1] - 2026-09-29
+
+### Fixed
+- **测试污染真实用户缓存**：`daemon_regression_test.go` 只隔离了账号池（`AGS_DATA_DIR`），`daemonSyncOnce` 内部的落盘仍走 `os.UserCacheDir()`，导致 `go test` 把假账号 `b@x` 写进真实的 `~/.cache/ags/state.json`，令 `ags status` 显示误导性的重启提示。
+
+### Added
+- **`AGS_CACHE_DIR`**：可覆盖缓存根目录（daemon 选中状态 `state.json` 与 TUI 日志 `tui.log`），便于测试隔离与自定义存放；未设置时仍回落系统用户缓存目录。
+
 ## [v0.5.0] - 2026-09-27
 
 ### Changed

@@ -61,12 +61,21 @@ func setEnv(env []string, key, value string) []string {
 	return out
 }
 
-func defaultTUILogPath() string {
+// cacheDir 返回 ags 的缓存根目录。AGS_CACHE_DIR 可覆盖（便于测试隔离与自定义存放），
+// 未设置时回落到系统用户缓存目录。
+func cacheDir() string {
+	if base := os.Getenv("AGS_CACHE_DIR"); base != "" {
+		return base
+	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "ags", "tui.log")
+	return dir
+}
+
+func defaultTUILogPath() string {
+	return filepath.Join(cacheDir(), "ags", "tui.log")
 }
 
 func openLogFile(path string) (*os.File, error) {

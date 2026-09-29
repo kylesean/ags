@@ -13,6 +13,7 @@ import (
 // : 单轮同步——keyring 与最优号不一致时写入，一致时不动。
 func TestDaemonSyncOnce(t *testing.T) {
 	t.Setenv("AGS_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_CACHE_DIR", t.TempDir())
 	now := time.Now()
 	sel := pool.NewSelector([]*pool.Account{
 		{Name: "B", Email: "b@x", AccessToken: "AT", RefreshToken: "rt", Expiry: now.Add(time.Hour)},
@@ -45,6 +46,7 @@ func TestDaemonSyncOnce(t *testing.T) {
 // : 全部冷却时不写、不崩。
 func TestDaemonSyncOnceAllCooling(t *testing.T) {
 	t.Setenv("AGS_DATA_DIR", t.TempDir())
+	t.Setenv("AGS_CACHE_DIR", t.TempDir())
 	now := time.Now()
 	sel := pool.NewSelector([]*pool.Account{
 		{Name: "A", Email: "a@x", AccessToken: "AT", Expiry: now.Add(time.Hour)},

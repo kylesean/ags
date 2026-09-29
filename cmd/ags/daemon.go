@@ -23,11 +23,7 @@ type daemonState struct {
 }
 
 func defaultDaemonStatePath() string {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	return filepath.Join(dir, "ags", "state.json")
+	return filepath.Join(cacheDir(), "ags", "state.json")
 }
 
 func writeDaemonState(path, name, email string) error {
