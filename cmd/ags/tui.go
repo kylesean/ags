@@ -113,6 +113,14 @@ func ensureNoProxy(env []string, host string) []string {
 	return out
 }
 
+// gatewayEnv 构造拉起 agy 用的环境：注入 Gateway URL，并确保本地地址不被代理。
+//
+// 只注入 agy ≥1.2.x 实际读取的 AGY_LLM_GATEWAY_URL；旧的 AGY_GATEWAY_URL 已废弃。
+func gatewayEnv(base []string, gateway string) []string {
+	env := ensureNoProxy(base, "127.0.0.1")
+	return setEnv(env, "AGY_LLM_GATEWAY_URL", gateway)
+}
+
 func waitGateway(ctx context.Context, addr string, serverErr <-chan error) error {
 	for {
 		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
@@ -227,7 +235,7 @@ func agyStopPlan(goos string) (interrupt bool, wait time.Duration) {
 	return true, 5 * time.Second
 }
 
-// cmdTUI 统一启动 Gateway 和 agy，避免用户手动设置 AGY_GATEWAY_URL。
+// cmdTUI 统一启动 Gateway 和 agy，避免用户手动设置 AGY_LLM_GATEWAY_URL。
 
 func isOneShotAgy(args []string) bool {
 	for _, arg := range args {
@@ -488,8 +496,7 @@ func cmdTUI(ctx context.Context, args []string) error {
 		}
 	}
 
-	env := ensureNoProxy(os.Environ(), "127.0.0.1")
-	env = setEnv(env, "AGY_GATEWAY_URL", gateway)
+	env := gatewayEnv(os.Environ(), gateway)
 	agy := startAgy(env, agyArgs)
 
 	for {

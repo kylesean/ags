@@ -15,7 +15,7 @@ import (
 // cmdProbe 启动拦截探针。
 //
 // 两种模式：
-//   - -mode http    反向代理形态，配 AGY_GATEWAY_URL 用，记录线格式
+//   - -mode http    反向代理形态，配 AGY_LLM_GATEWAY_URL 用，记录线格式
 //   - -mode connect 极简 CONNECT 代理，配 AGY_PROXY_URL/http_proxy 用，记录上游 host:port
 //
 // 本命令只读，不修改系统 Keyring。
@@ -74,7 +74,7 @@ func cmdProbe(ctx context.Context, args []string) error {
 
 	switch *mode {
 	case "http":
-		lg.Printf("接入: AGY_GATEWAY_URL=http://%s agy --print 'hi'", *listen)
+		lg.Printf("接入: AGY_LLM_GATEWAY_URL=http://%s agy --print 'hi'", *listen)
 		s := &probe.HTTPServer{
 			Listen:   *listen,
 			Upstream: *upstream,

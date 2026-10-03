@@ -32,6 +32,29 @@ func TestEnsureNoProxyAddsGatewayHost(t *testing.T) {
 	}
 }
 
+func TestGatewayEnvInjectsGatewayVar(t *testing.T) {
+	base := []string{"NO_PROXY=example.com", "no_proxy=example.com", "PATH=/usr/bin"}
+	env := gatewayEnv(base, "http://127.0.0.1:7897")
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{
+		// agy ≥1.2.x 实际读取的变量。
+		"AGY_LLM_GATEWAY_URL=http://127.0.0.1:7897",
+		"NO_PROXY=example.com,127.0.0.1",
+		"no_proxy=example.com,127.0.0.1",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("env 缺少 %q:\n%s", want, joined)
+		}
+	}
+	// 不再注入已废弃的旧变量。
+	if strings.Contains(joined, "AGY_GATEWAY_URL=") {
+		t.Errorf("不应注入已废弃的 AGY_GATEWAY_URL:\n%s", joined)
+	}
+	if reflect.DeepEqual(base, env) {
+		t.Fatal("gatewayEnv 应返回新切片，不得原地修改入参")
+	}
+}
+
 func TestSecretFromAccountPreservesCredentials(t *testing.T) {
 	expiry := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	sec := secretFromAccount(&pool.Account{
