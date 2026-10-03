@@ -17,6 +17,8 @@ go install github.com/kylesean/ags/cmd/ags@latest
 # Windows 用户请用 Releases 的 zip 包
 ```
 
+**Termux（Android）**：一键脚本会自动识别 Termux，下载 `android/arm64` 包并安装到 `$PREFIX/bin`。Termux 没有桌面 Secret Service，`ags` 会自动降级读写 agy 的本地凭据文件 `~/.gemini/antigravity-cli/antigravity-oauth-token`（可用 `AGY_TOKEN_FILE` 覆盖）。
+
 ## 快速开始
 
 账号只需入池一次：
@@ -90,6 +92,7 @@ ags --print 'hi'                   # agy 参数直接透传（-- 后也行）
 
 - 切换后必须重启 `agy` 生效（`agy` 启动时读一次 Keyring 并缓存），交互式会话用 `/resume` 恢复。
 - 账号池目录 `0700`、凭据文件 `0600`；多账号轮换请遵守平台服务条款。
+- 无桌面 Secret Service 的环境（Termux / 无头服务器）自动降级到 agy 本地凭据文件；`ags login` 在无 `DISPLAY` 时不会尝试拉起浏览器，直接用打印出的链接登录即可。
 
 ## 开发
 

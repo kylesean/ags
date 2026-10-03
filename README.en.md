@@ -17,6 +17,8 @@ go install github.com/kylesean/ags/cmd/ags@latest
 # Windows users: grab the zip from Releases
 ```
 
+**Termux (Android)**: the install script detects Termux, downloads the `android/arm64` archive, and installs it to `$PREFIX/bin`. Termux has no desktop Secret Service, so `ags` automatically falls back to agy's local credential file `~/.gemini/antigravity-cli/antigravity-oauth-token` (override with `AGY_TOKEN_FILE`).
+
 ## Quickstart
 
 Pool your accounts once:
@@ -90,6 +92,7 @@ ags --print 'hi'                   # agy flags pass through (-- also works)
 
 - Restart `agy` after every switch (it reads the Keyring once at startup and caches it); resume interactive sessions with `/resume`.
 - Pool dir `0700`, credential files `0600`; rotate accounts in compliance with platform terms.
+- Without a desktop Secret Service (Termux / headless servers), `ags` falls back to agy's local credential file; `ags login` skips launching a browser when `DISPLAY` is unset — just open the printed URL yourself.
 
 ## Development
 

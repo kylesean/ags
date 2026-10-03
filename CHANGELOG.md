@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.6.0] - 2026-10-04
+
+### Fixed
+- **托管模式 Gateway 环境变量失效**：agy ≥1.2.x 已移除 `AGY_GATEWAY_URL`，只认 `AGY_LLM_GATEWAY_URL`（实测 1.2.16 二进制中旧名出现 0 次）。`ags` 改为注入 `AGY_LLM_GATEWAY_URL`，修复新版 agy 下 Gateway 未被接管的问题。
+
+### Added
+- **无 Secret Service 环境降级**：仅当 Keyring 后端不可达（如 Termux / 无头服务器无 DBus Secret Service）时才回落 agy 本地凭据文件 `~/.gemini/antigravity-cli/antigravity-oauth-token`（可用 `AGY_TOKEN_FILE` 覆盖）；后端可达但无条目或写失败一律如实报错，不降级。
+- **Android/Termux 支持**：发布 `android/arm64` 预编译包；`install.sh` 自动识别 Termux 并安装到 `$PREFIX/bin`。
+- **无头登录体验**：`ags login` 在无图形会话（无 `DISPLAY`/`WAYLAND_DISPLAY`）时不再尝试拉起浏览器；Termux 下改用 `termux-open-url`。
+
 ## [v0.5.1] - 2026-09-29
 
 ### Fixed
