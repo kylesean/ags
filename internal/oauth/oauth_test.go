@@ -810,6 +810,8 @@ func TestLoginEmitsAuthURLThroughCustomPrinter(t *testing.T) {
 }
 
 func TestBrowserCommandForOS(t *testing.T) {
+	t.Setenv("DISPLAY", ":0") // 模拟有图形会话，使 linux 返回 xdg-open
+	t.Setenv("TERMUX_VERSION", "")
 	cases := []struct {
 		goos     string
 		wantPath string
@@ -819,10 +821,44 @@ func TestBrowserCommandForOS(t *testing.T) {
 		{"linux", "xdg-open"},
 	}
 	for _, c := range cases {
-		cmd := browserCommandForOS(c.goos, "https://example.com")
+		cmd := browserCommand(c.goos, "https://example.com")
+		if cmd == nil {
+			t.Errorf("GOOS=%s: got nil, want command starting with %s", c.goos, c.wantPath)
+			continue
+		}
 		if !strings.Contains(cmd.Path, c.wantPath) && cmd.Args[0] != c.wantPath {
 			t.Errorf("GOOS=%s: got %v, want command starting with %s", c.goos, cmd.Args, c.wantPath)
 		}
+	}
+}
+
+func TestBrowserCommandTermuxUsesTermuxOpenURL(t *testing.T) {
+	t.Setenv("TERMUX_VERSION", "0.118")
+	cmd := browserCommand("linux", "https://example.com")
+	if cmd == nil {
+		t.Fatal("Termux 下应返回 termux-open-url 命令")
+	}
+	if !strings.Contains(cmd.Path, "termux-open-url") && cmd.Args[0] != "termux-open-url" {
+		t.Errorf("got %v, want termux-open-url", cmd.Args)
+	}
+}
+
+func TestBrowserCommandHeadlessLinuxIsNil(t *testing.T) {
+	t.Setenv("TERMUX_VERSION", "")
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	if cmd := browserCommand("linux", "https://example.com"); cmd != nil {
+		t.Errorf("无头 Linux 应返回 nil, got %v", cmd.Args)
+	}
+}
+
+func TestBrowserCommandWaylandSessionAllowed(t *testing.T) {
+	t.Setenv("TERMUX_VERSION", "")
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	cmd := browserCommand("linux", "https://example.com")
+	if cmd == nil {
+		t.Fatal("有 WAYLAND_DISPLAY 时应允许拉起浏览器")
 	}
 }
 

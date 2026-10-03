@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -242,21 +243,43 @@ func printAuthURL(u string, fn func(string)) {
 	fmt.Println(u)
 }
 
-// browserCommandForOS 根据操作系统返回打开 URL 的命令对象。
-func browserCommandForOS(goos, u string) *exec.Cmd {
+// isTermux 报告是否运行在 Termux（Android）环境。
+func isTermux() bool { return os.Getenv("TERMUX_VERSION") != "" }
+
+// hasGraphicalSession 报告当前是否有可用的图形会话（X11 / Wayland）。
+func hasGraphicalSession() bool {
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+}
+
+// browserCommand 返回在当前环境打开 URL 的命令；无可用方式时返回 nil。
+//   - Termux：termux-open-url 唤起手机浏览器
+//   - macOS / Windows：系统默认打开方式
+//   - Linux 桌面（有 DISPLAY / WAYLAND_DISPLAY）：xdg-open
+//   - 其余无头环境：nil，不尝试注定失败的 xdg-open（URL 已打印给用户）
+func browserCommand(goos, u string) *exec.Cmd {
+	if isTermux() {
+		return exec.Command("termux-open-url", u)
+	}
 	switch goos {
 	case "darwin":
 		return exec.Command("open", u)
 	case "windows":
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
 	default:
+		if !hasGraphicalSession() {
+			return nil
+		}
 		return exec.Command("xdg-open", u)
 	}
 }
 
 // openBrowser 尽力拉起默认浏览器。URL 仅作为命令参数传递，避免 Shell 注入风险。
+// 无头环境不尝试拉起，授权链接已由 printAuthURL 打印。
 func openBrowser(u string) {
-	cmd := browserCommandForOS(runtime.GOOS, u)
+	cmd := browserCommand(runtime.GOOS, u)
+	if cmd == nil {
+		return
+	}
 	if err := cmd.Start(); err != nil {
 		return
 	}

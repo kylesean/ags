@@ -45,12 +45,25 @@ err() {
 }
 
 # 1. Detect OS
-OS_RAW="$(uname -s)"
-case "$OS_RAW" in
-  Linux*)  OS="linux" ;;
-  Darwin*) OS="darwin" ;;
-  *) err "不支持的操作系统: $OS_RAW。Windows 用户请前往 GitHub Releases 下载 zip 包。" ;;
+# Termux (Android) 优先识别：使用 android 目标，默认装到 $PREFIX/bin。
+IS_TERMUX=0
+case "${PREFIX:-}" in
+  *com.termux*) IS_TERMUX=1 ;;
 esac
+if [ -n "${TERMUX_VERSION:-}" ]; then
+  IS_TERMUX=1
+fi
+
+if [ "$IS_TERMUX" -eq 1 ]; then
+  OS="android"
+else
+  OS_RAW="$(uname -s)"
+  case "$OS_RAW" in
+    Linux*)  OS="linux" ;;
+    Darwin*) OS="darwin" ;;
+    *) err "不支持的操作系统: $OS_RAW。Windows 用户请前往 GitHub Releases 下载 zip 包。" ;;
+  esac
+fi
 
 # 2. Detect Architecture
 ARCH_RAW="$(uname -m)"
@@ -59,6 +72,11 @@ case "$ARCH_RAW" in
   arm64|aarch64) ARCH="arm64" ;;
   *) err "不支持的系统架构: $ARCH_RAW" ;;
 esac
+
+# 目前仅发布 android/arm64（android/amd64 需要 cgo，无法纯 Go 构建）。
+if [ "$IS_TERMUX" -eq 1 ] && [ "$ARCH" = "amd64" ]; then
+  err "Termux (Android) 暂只提供 arm64 预编译包；请改用: go install github.com/kylesean/ags/cmd/ags@latest"
+fi
 
 info "检测到运行环境: ${OS}/${ARCH}"
 
@@ -90,6 +108,8 @@ CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums
 # 4. Resolve Target Directory
 if [ -n "${BINDIR:-}" ]; then
   INSTALL_DIR="$BINDIR"
+elif [ "$IS_TERMUX" -eq 1 ] && [ -n "${PREFIX:-}" ]; then
+  INSTALL_DIR="$PREFIX/bin"
 elif [ -w "/usr/local/bin" ]; then
   INSTALL_DIR="/usr/local/bin"
 else
