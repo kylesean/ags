@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -10,10 +11,18 @@ import (
 	"github.com/kylesean/ags/internal/pool"
 )
 
+// isolateTokenFile 让 keyring 降级路径指向不存在的临时文件，
+// 避免测试读到开发者真实的 ~/.gemini 凭据。
+func isolateTokenFile(t *testing.T) {
+	t.Helper()
+	t.Setenv("AGY_TOKEN_FILE", filepath.Join(t.TempDir(), "no-such-token"))
+}
+
 // : 单轮同步——keyring 与最优号不一致时写入，一致时不动。
 func TestDaemonSyncOnce(t *testing.T) {
 	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	t.Setenv("AGS_CACHE_DIR", t.TempDir())
+	isolateTokenFile(t)
 	now := time.Now()
 	sel := pool.NewSelector([]*pool.Account{
 		{Name: "B", Email: "b@x", AccessToken: "AT", RefreshToken: "rt", Expiry: now.Add(time.Hour)},
@@ -47,6 +56,7 @@ func TestDaemonSyncOnce(t *testing.T) {
 func TestDaemonSyncOnceAllCooling(t *testing.T) {
 	t.Setenv("AGS_DATA_DIR", t.TempDir())
 	t.Setenv("AGS_CACHE_DIR", t.TempDir())
+	isolateTokenFile(t)
 	now := time.Now()
 	sel := pool.NewSelector([]*pool.Account{
 		{Name: "A", Email: "a@x", AccessToken: "AT", Expiry: now.Add(time.Hour)},
