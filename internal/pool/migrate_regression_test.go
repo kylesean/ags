@@ -10,8 +10,8 @@ import (
 func TestDataDirMigratesFromLegacy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows 的 os.UserHomeDir 读 USERPROFILE
 	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("AGS_DATA_DIR", "")
 	t.Setenv("AGS_DATA_DIR", "")
 	legacy := filepath.Join(home, ".local", "share", "agsw", "pool")
 	if err := os.MkdirAll(legacy, 0o700); err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -152,12 +153,15 @@ func TestStoreFallsBackToTokenFileWhenBackendUnavailable(t *testing.T) {
 	if got.Token.AccessToken != "at" || got.Token.RefreshToken != "rt" || got.IDToken != "h.p.s" {
 		t.Errorf("落盘凭据 = %+v", got)
 	}
-	fi, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := fi.Mode().Perm(); perm != 0o600 {
-		t.Errorf("token 文件权限 = %o, want 600", perm)
+	// Windows 不支持 POSIX 权限位。
+	if runtime.GOOS != "windows" {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Errorf("token 文件权限 = %o, want 600", perm)
+		}
 	}
 }
 
@@ -230,6 +234,7 @@ func TestFallbackPathHonorsEnvAndHome(t *testing.T) {
 	t.Setenv("AGY_TOKEN_FILE", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows 的 os.UserHomeDir 读 USERPROFILE
 	want := filepath.Join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token")
 	if got := fallbackPath(); got != want {
 		t.Errorf("fallbackPath = %q, want %q", got, want)
