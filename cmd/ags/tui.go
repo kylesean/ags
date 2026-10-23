@@ -498,6 +498,16 @@ func cmdTUI(ctx context.Context, args []string) error {
 	}
 
 	env := gatewayEnv(os.Environ(), gateway)
+
+	// 在拉起 agy 之前把「当前用哪个号」明确打给用户。
+	//
+	// 为什么需要：agy 在网关模式下会把身份显示成空（它认为网关会告诉它
+	// 是谁），所以界面上完全看不出在用哪个账号 —— 用户只能去翻日志。
+	// 这是 agy 的既定行为，我们改不了，但可以在自己这一侧补一句。
+	if _, email, err := keyringCurrentAdapter(); err == nil && email != "" {
+		fmt.Fprintf(os.Stderr, "[tui] %s\n", i18n.Trf("tui.usingAccount", email))
+	}
+
 	agy := startAgy(env, agyArgs)
 
 	for {

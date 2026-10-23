@@ -273,4 +273,5 @@ var jaCatalog = map[string]string{
 	"serve.envelopeOff":       "無効（純粋なパススルー）",
 	"serve.defaultModel":      "上流の既定モデル %s",
 	"serve.retryFail":         "モデル表の再取得に失敗しました（%s 後に再試行）: %v",
+	"tui.usingAccount":        "使用中のアカウント: %s（ゲートウェイモードでは agy が身元を表示しないのは正常です）",
 }

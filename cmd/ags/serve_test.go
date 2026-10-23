@@ -167,6 +167,3 @@ func TestRetryFetchModelAliasesSucceedsOnSubsequentAttempt(t *testing.T) {
 
 	t.Fatalf("model aliases were not populated after retry, got: %v", srv.ModelAliases())
 }
-
-
-

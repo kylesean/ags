@@ -274,4 +274,5 @@ Run "<command> -h" for each command's flags.
 	"serve.envelopeOff":       "off (pure passthrough)",
 	"serve.defaultModel":      "upstream default model %s",
 	"serve.retryFail":         "background model-table retry failed (next attempt in %s): %v",
+	"tui.usingAccount":        "using account: %s (agy hides the identity in gateway mode — that is expected)",
 }
