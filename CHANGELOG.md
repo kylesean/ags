@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- **模型发现清单兜底告警**：上游没给 `agentModelSorts`，或给了但一个都对不上
+  （说明改了字段名/结构）时，会退回按 id 排序的清单 —— 那份清单里可能有
+  displayName 与 key 错位的条目，agy 会按显示名反推 id，选到就报
+  "no longer available"。现在这两种回退都会在启动日志里明确告警，
+  且区分措辞（「没给」vs「对不上」）。告警由 `cloudcode.Models.Warnings`
+  承载，serve 的启动路径与后台重试路径共用 `reportModelTable` 统一输出。
+
+## [v0.8.0] - 2026-10-24
+
 ### Changed
 - **`ags usage` 重做输出**：按额度组渲染进度条，样式对齐 agy 原生 `/usage` ——
   组名全大写、`Models within this group:` 描述、`[████░░░░] 47.44%` 条形，

@@ -184,20 +184,9 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			// 模型发现清单：agy ≥1.4 会先 GET /v1beta/models 问网关。
 			// 没有它 agy 就退回内置目录并发已下线的模型名（一提问就 404）。
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
-			if *verbose {
-				lg.Printf("模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
-					models.Keys, len(models.Aliases), len(models.Catalog), formatAliases(models.Aliases))
-			} else {
-				lg.Printf("模型映射已加载：%d 个别名，发现清单 %d 个模型",
-					len(models.Aliases), len(models.Catalog))
-			}
+			reportModelTable(models, *verbose, lg, "模型映射已加载")
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
-			}
-			// UA 过期是静默降级：接口 200 但少给模型与额度组。
-			// 主动判定一次，别等用户发现「额度不刷新了」。
-			if warn := uaCapabilityWarning(models); warn != "" {
-				lg.Printf("警告: %s", warn)
 			}
 		}
 	}
@@ -300,21 +289,35 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 			}
 			srv.SetModelAliases(models.Aliases)
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
-			if verbose {
-				lg.Printf("后台重试获取模型表成功：模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
-					models.Keys, len(models.Aliases), len(models.Catalog), formatAliases(models.Aliases))
-			} else {
-				lg.Printf("后台重试获取模型表成功：已加载 %d 个别名、%d 个发现模型",
-					len(models.Aliases), len(models.Catalog))
-			}
+			reportModelTable(models, verbose, lg, "后台重试获取模型表成功")
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
 			}
-			if warn := uaCapabilityWarning(models); warn != "" {
-				lg.Printf("警告: %s", warn)
-			}
 			return
 		}
+	}
+}
+
+// reportModelTable 统一输出「模型表已就绪」这段日志，并带上所有告警。
+//
+// 抽出来是因为启动路径与后台重试路径都要打同一套信息：任何一条告警
+// 漏在某条路径上，都会变成「静默降级」—— 正是这次要根治的那类问题。
+func reportModelTable(m *cloudcode.Models, verbose bool, lg *log.Logger, prefix string) {
+	if verbose {
+		lg.Printf("%s：模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
+			prefix, m.Keys, len(m.Aliases), len(m.Catalog), formatAliases(m.Aliases))
+	} else {
+		lg.Printf("%s：%d 个别名，发现清单 %d 个模型",
+			prefix, len(m.Aliases), len(m.Catalog))
+	}
+
+	// 兜底清单的告警（displayName 与 key 错位会让 agy 选到不存在的模型）。
+	for _, w := range m.Warnings {
+		lg.Printf("警告: %s", w)
+	}
+	// UA 过期是静默降级：接口 200 但少给模型与额度组。
+	if warn := uaCapabilityWarning(m); warn != "" {
+		lg.Printf("警告: %s", warn)
 	}
 }
 

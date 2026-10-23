@@ -43,6 +43,11 @@ type Models struct {
 	Aliases map[string]string
 	// Catalog 是给 agy 做模型发现用的清单（顺序即展示顺序）。
 	Catalog []CatalogEntry
+	// Warnings 是「能用，但很可能有坑」的提示，供 serve 打进启动日志。
+	//
+	// 为什么放返回值而不是直接打日志：buildModels 是纯函数，要能用纯数据
+	// 单测；cloudcode 也不该绑死某个 log.Logger。调用方决定怎么说。
+	Warnings []string
 	// DefaultAgentModelID 是上游声明的默认模型键（实测 23 字节 =
 	// "gemini-3.8-flash-tiered"），用来在启动日志里交叉验证别名推得对不对。
 	DefaultAgentModelID string
@@ -153,6 +158,7 @@ func FetchModels(ctx context.Context, upstream, accessToken, userAgent string) (
 // 先跑官方表，再跑 tiered，最后跑档位；后两条不覆盖已有别名（先到先得），
 // 也不覆盖真实键。
 func buildModels(r *fetchAvailableModelsResponse) *Models {
+	catalog, catalogWarnings := buildCatalog(r)
 	aliases := make(map[string]string)
 
 	// 规则 1：官方重命名，无条件。
@@ -194,7 +200,8 @@ func buildModels(r *fetchAvailableModelsResponse) *Models {
 
 	return &Models{
 		Aliases:             aliases,
-		Catalog:             buildCatalog(r),
+		Catalog:             catalog,
+		Warnings:            catalogWarnings,
 		DefaultAgentModelID: r.DefaultAgentModelID,
 		Keys:                len(r.Models),
 	}
@@ -276,10 +283,14 @@ func effortAliases(r *fetchAvailableModelsResponse) map[string]string {
 // 所以这里**以 agentModelSorts 为准**，不再兜底补全其余模型。
 //
 // 只有上游没给 agentModelSorts 时才退回「全部合法条目按 ID 排序」，
-// 那是旧版上游的形态，聊胜于无。
-func buildCatalog(r *fetchAvailableModelsResponse) []CatalogEntry {
+// 那是旧版上游的形态。但这条兜底路径**有坑**（见上），所以必须回报
+// 一条 Warnings 让 serve 喊出来：静默用上错位模型名，用户只会觉得
+// 「模型又坏了」，而日志里一行错都没有。
+//
+// 返回值第二个是告警列表（可能为空）。
+func buildCatalog(r *fetchAvailableModelsResponse) ([]CatalogEntry, []string) {
 	if r == nil || len(r.Models) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	entries := make(map[string]CatalogEntry, len(r.Models))
@@ -309,15 +320,17 @@ func buildCatalog(r *fetchAvailableModelsResponse) []CatalogEntry {
 		}
 	}
 	if len(entries) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// 首选：严格按 agentModelSorts 的顺序与成员，一个不多。
 	out := make([]CatalogEntry, 0, len(entries))
 	seen := make(map[string]bool, len(entries))
+	sortIDs := 0
 	for _, sort := range r.AgentModelSorts {
 		for _, g := range sort.Groups {
 			for _, id := range g.ModelIDs {
+				sortIDs++
 				if seen[id] {
 					continue
 				}
@@ -329,10 +342,10 @@ func buildCatalog(r *fetchAvailableModelsResponse) []CatalogEntry {
 		}
 	}
 	if len(out) > 0 {
-		return out
+		return out, nil
 	}
 
-	// 兜底：上游没给排序表。按 ID 排序，保证每次启动顺序稳定。
+	// 兜底：上游没给排序表（旧版形态）或给了但对不上（结构变了）。
 	ids := make([]string, 0, len(entries))
 	for id := range entries {
 		ids = append(ids, id)
@@ -341,7 +354,27 @@ func buildCatalog(r *fetchAvailableModelsResponse) []CatalogEntry {
 	for _, id := range ids {
 		out = append(out, entries[id])
 	}
-	return out
+
+	// 两种兜底的危险程度不同，告警也要分开说：
+	//   - 没给排序表：可能是旧版上游，尚可接受
+	//   - 给了却一条都对不上：上游改了字段名/结构，几乎肯定要出问题
+	var warnings []string
+	switch {
+	case sortIDs > 0:
+		warnings = append(warnings, fmt.Sprintf(
+			"上游的 agentModelSorts 里有 %d 个 id，但与 models 表一个都对不上"+
+				"（上游很可能改了字段名或结构）；已退回按 id 排序的 %d 个模型，"+
+				"其中可能有 displayName 与 key 错位的条目 —— agy 会按显示名反推 id，"+
+				"选到这类模型会得到 no longer available",
+			sortIDs, len(out)))
+	default:
+		warnings = append(warnings, fmt.Sprintf(
+			"上游没有返回 agentModelSorts（旧版上游？），已退回按 id 排序的 %d 个模型；"+
+				"其中可能有 displayName 与 key 错位的条目 —— agy 会按显示名反推 id，"+
+				"选到这类模型会得到 no longer available",
+			len(out)))
+	}
+	return out, warnings
 }
 
 // clip 截断并压平超长文本，避免把上游整页错误写进日志。
