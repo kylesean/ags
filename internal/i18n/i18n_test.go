@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,6 @@ func TestDetectPriority(t *testing.T) {
 		{"AGS_LANG 覆盖一切", map[string]string{"AGS_LANG": "zh", "LC_ALL": "en_US.UTF-8"}, LangZH},
 		{"C 是英文", map[string]string{"LANG": "C"}, LangEN},
 		{"POSIX 是英文", map[string]string{"LANG": "POSIX"}, LangEN},
-		{"空环境用默认", map[string]string{"LANG": ""}, DefaultLang},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -34,6 +34,26 @@ func TestDetectPriority(t *testing.T) {
 				t.Errorf("Detect() = %q，想要 %q", got, c.want)
 			}
 		})
+	}
+}
+
+// 「环境变量全空」时走系统区域设置，而系统设置是**平台相关**的：
+// Windows 有 GetUserDefaultUILanguage（CI 机器上是 en-US），
+// macOS 有 AppleLanguages，Linux 没有额外来源 → 回落默认语言。
+//
+// 所以这条只能断言「返回受支持的语言」，不能断言具体值 ——
+// 否则测试会在不同平台的 CI 上各自失败（实测 Windows CI 就是这样红的）。
+func TestDetectEmptyEnvFallsBackToSupported(t *testing.T) {
+	clearLangEnv(t)
+	got := Detect()
+	if !IsSupported(got) {
+		t.Errorf("Detect() = %q，不是受支持的语言", got)
+	}
+	// Linux/BSD 没有系统语言来源，必须精确回落到默认。
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
+		if got != DefaultLang {
+			t.Errorf("Linux 上 Detect() = %q，想要默认 %q", got, DefaultLang)
+		}
 	}
 }
 
