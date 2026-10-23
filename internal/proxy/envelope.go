@@ -62,6 +62,18 @@ func DefaultUpstreamUserAgent() string {
 // geminiPathPrefix 是 agy 网关模式发来的生成请求路径前缀。
 const geminiPathPrefix = "/v1beta/models/"
 
+// modelsDiscoveryPath 是 agy ≥1.4 的模型发现路径：
+//
+//	GET /v1beta/models?pageSize=1000
+//
+// 上游 CloudCode 没有这个路由，必须由网关自己回答，见 serveModelDiscovery。
+// 注意它和 geminiPathPrefix 只差一个末尾斜杠，别把两者混用。
+const modelsDiscoveryPath = "/v1beta/models"
+
+// openAIModelsDiscoveryPath 是同一件事的 OpenAI 兼容写法。
+// agy 1.4.6 实测会连发两条（先 Gemini 再 OpenAI），哪个先答就用哪个。
+const openAIModelsDiscoveryPath = "/v1/models"
+
 // v1internalPrefix 是 cloudcode 信封方法的路径前缀。
 const v1internalPrefix = "/v1internal:"
 

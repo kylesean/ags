@@ -75,7 +75,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 	passthrough := fs.Bool("passthrough", false,
 		"关闭信封改写，纯透传（调试用；此时上游不会接受 agy 的 Gemini 路径）")
 	noModelAlias := fs.Bool("no-model-alias", false,
-		"不拉模型表、不做模型名映射（调试用；gemini-3.8-flash 之类会 404）")
+		"不拉模型表、不做模型名映射/模型发现（调试用；agy 会退回内置目录并发已下线的模型名）")
 	quotaInterval := fs.Duration("quota-interval", DefaultQuotaInterval,
 		"GEMINI 额度轮询间隔；设为 0 关闭额度检测（关了就不会自动换号）")
 	quotaThreshold := fs.Float64("quota-threshold", 0,
@@ -162,8 +162,13 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 	}
 	adapter.setInitialAccount(first.Name, first.Email)
 
-	// 模型别名：agy 网关模式发的 gemini-3.8-flash 上游并不认，
-	// 真实键是 gemini-3.8-flash-tiered。拉一次模型表推导出来。
+	// 模型别名 + 模型发现清单。两条都来自同一份 fetchAvailableModels：
+	//
+	//   - 别名：agy 网关模式发的 gemini-3.8-flash / gemini-4-argon 上游并不认，
+	//     真实键是 gemini-3.8-flash-tiered / gemini-4-argon-medium。
+	//   - 发现清单：agy ≥1.4 启动时先 GET /v1beta/models 问网关要模型表，
+	//     拿不到就退回内置目录并发已下线的名字（一提问就 404）。
+	//
 	// 失败只告警不退出：模型表拿不到时仍可能有一部分模型是直接命中的
 	//（实测 gemini-3.1-flash-lite 就是），不该因此把整个 serve 判死。
 	if srv.Envelope() && !*noModelAlias {
@@ -176,11 +181,15 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			go retryFetchModelAliases(ctx, sel, *upstream, srv, *verbose, lg, 10*time.Second)
 		} else {
 			srv.SetModelAliases(models.Aliases)
+			// 模型发现清单：agy ≥1.4 会先 GET /v1beta/models 问网关。
+			// 没有它 agy 就退回内置目录并发已下线的模型名（一提问就 404）。
+			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
 			if *verbose {
-				lg.Printf("模型表 %d 个键，别名 %d 条：%s",
-					models.Keys, len(models.Aliases), formatAliases(models.Aliases))
+				lg.Printf("模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
+					models.Keys, len(models.Aliases), len(models.Catalog), formatAliases(models.Aliases))
 			} else {
-				lg.Printf("模型映射已加载：%d 个别名", len(models.Aliases))
+				lg.Printf("模型映射已加载：%d 个别名，发现清单 %d 个模型",
+					len(models.Aliases), len(models.Catalog))
 			}
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
@@ -285,11 +294,13 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 				continue
 			}
 			srv.SetModelAliases(models.Aliases)
+			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
 			if verbose {
-				lg.Printf("后台重试获取模型表成功：模型表 %d 个键，别名 %d 条：%s",
-					models.Keys, len(models.Aliases), formatAliases(models.Aliases))
+				lg.Printf("后台重试获取模型表成功：模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
+					models.Keys, len(models.Aliases), len(models.Catalog), formatAliases(models.Aliases))
 			} else {
-				lg.Printf("后台重试获取模型表成功：已加载 %d 个别名", len(models.Aliases))
+				lg.Printf("后台重试获取模型表成功：已加载 %d 个别名、%d 个发现模型",
+					len(models.Aliases), len(models.Catalog))
 			}
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
@@ -443,6 +454,25 @@ func resolveCandidates(name string) ([]*pool.Account, error) {
 		AuthMethod:      sec.AuthMethod,
 		KeyringFallback: true,
 	}}, nil
+}
+
+// toProxyCatalog 把 cloudcode 的清单转成 proxy 的（避免 proxy 依赖 cloudcode）。
+func toProxyCatalog(in []cloudcode.CatalogEntry) []proxy.CatalogEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]proxy.CatalogEntry, 0, len(in))
+	for _, e := range in {
+		out = append(out, proxy.CatalogEntry{
+			ID:               e.ID,
+			DisplayName:      e.DisplayName,
+			InputTokenLimit:  e.InputTokenLimit,
+			OutputTokenLimit: e.OutputTokenLimit,
+			SupportsImages:   e.SupportsImages,
+			SupportsThinking: e.SupportsThinking,
+		})
+	}
+	return out
 }
 
 // resolverMap 是给日志用的：别名表可能有几十条，全打出来会把启动日志淹掉。

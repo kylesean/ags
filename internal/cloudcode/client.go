@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -40,11 +41,38 @@ type Models struct {
 	// Aliases 是「旧名/别名 → 上游真实键」，例如
 	// gemini-3.8-flash → gemini-3.8-flash-tiered。
 	Aliases map[string]string
+	// Catalog 是给 agy 做模型发现用的清单（顺序即展示顺序）。
+	Catalog []CatalogEntry
 	// DefaultAgentModelID 是上游声明的默认模型键（实测 23 字节 =
 	// "gemini-3.8-flash-tiered"），用来在启动日志里交叉验证别名推得对不对。
 	DefaultAgentModelID string
 	// Keys 是上游模型键总数，用于启动日志。
 	Keys int
+}
+
+// CatalogEntry 是模型发现（GET /v1beta/models）里的一条。
+//
+// 为什么需要它：agy ≥1.4 启动时先向网关要模型列表（Tier 3）。网关回 404
+// 它就退到内置默认目录，然后发 gemini-3.1-pro-preview 这类上游早已下线
+// 的名字，表现为「一提问就 404 NOT_FOUND」。网关必须自己回答这份清单。
+type CatalogEntry struct {
+	ID               string
+	DisplayName      string
+	InputTokenLimit  int
+	OutputTokenLimit int
+	SupportsImages   bool
+	SupportsThinking bool
+}
+
+// modelEntry 是 models 表里我们关心的字段。
+type modelEntry struct {
+	DisplayName      string `json:"displayName"`
+	SupportsImages   bool   `json:"supportsImages"`
+	SupportsThinking bool   `json:"supportsThinking"`
+	MaxTokens        int    `json:"maxTokens"`
+	MaxOutputTokens  int    `json:"maxOutputTokens"`
+	APIProvider      string `json:"apiProvider"`
+	IsInternal       bool   `json:"isInternal"`
 }
 
 type fetchAvailableModelsResponse struct {
@@ -53,6 +81,13 @@ type fetchAvailableModelsResponse struct {
 	DeprecatedModelIDs  map[string]struct {
 		NewModelID string `json:"newModelId"`
 	} `json:"deprecatedModelIds"`
+	AgentModelSorts []struct {
+		DisplayName string `json:"displayName"`
+		Groups      []struct {
+			ModelIDs []string `json:"modelIds"`
+		} `json:"groups"`
+	} `json:"agentModelSorts"`
+	ImageGenerationModelIDs []string `json:"imageGenerationModelIds"`
 }
 
 // FetchModels 取回模型表并推导别名。upstream 必须带 scheme 与 host。
@@ -103,7 +138,7 @@ func FetchModels(ctx context.Context, upstream, accessToken, userAgent string) (
 
 // buildModels 从解析结果推导别名表。拆出来是为了能用纯数据做单测。
 //
-// 两条规则，作用域不同：
+// 三条规则，作用域不同：
 //
 //  1. 官方重命名表 deprecatedModelIds：old → newModelId，**无条件**生效。
 //     实测旧键往往仍列在 models 里（如 gemini-3.1-pro-high），那正是
@@ -111,8 +146,12 @@ func FetchModels(ctx context.Context, upstream, accessToken, userAgent string) (
 //  2. -tiered 推导：gemini-3.8-flash-tiered 的 plain 名 gemini-3.8-flash
 //     只有在上游**没有**同名键时才认作别名。这条是我们自己推的，标准要更严：
 //     覆盖一个真实键会把请求悄悄换到别的模型，那比报 404 更糟。
+//  3. 努力档位推导：agy 1.4.6 会把 "Gemini 4 Argon (Low)" 的选择摘成裸名
+//     gemini-4-argon 发出来（档位改走 thinkingConfig），上游只有
+//     gemini-4-argon-{low,medium,high}。没有这条，Argon 一族全是 404。
 //
-// 先跑官方表，再跑推导；推导不覆盖已有别名（先到先得）。
+// 先跑官方表，再跑 tiered，最后跑档位；后两条不覆盖已有别名（先到先得），
+// 也不覆盖真实键。
 func buildModels(r *fetchAvailableModelsResponse) *Models {
 	aliases := make(map[string]string)
 
@@ -142,11 +181,167 @@ func buildModels(r *fetchAvailableModelsResponse) *Models {
 		aliases[plain] = key
 	}
 
+	// 规则 3：努力档位（-low/-medium/-high）推导。
+	for base, target := range effortAliases(r) {
+		if _, exists := r.Models[base]; exists {
+			continue // 裸名是真实键
+		}
+		if _, taken := aliases[base]; taken {
+			continue // tiered / 官方表优先
+		}
+		aliases[base] = target
+	}
+
 	return &Models{
 		Aliases:             aliases,
+		Catalog:             buildCatalog(r),
 		DefaultAgentModelID: r.DefaultAgentModelID,
 		Keys:                len(r.Models),
 	}
+}
+
+// effortSuffixes 是 agy 摘掉后只留在模型名里的努力档位后缀。
+// 顺序即偏好：上游没指定默认档时优先 medium（与 defaultAgentModelId
+// 的实测取值一致），再退 high、low。
+var effortSuffixes = []string{"medium", "high", "low"}
+
+// effortAliases 推导「裸族名 → 具体档位键」。
+//
+// 只处理**同一族至少有两个档位**的名字：单档位的（如 gemini-3.5-flash-extra-low）
+// 多半是历史遗留命名，凭空造一条 base 别名只会污染映射表。
+func effortAliases(r *fetchAvailableModelsResponse) map[string]string {
+	if r == nil || len(r.Models) == 0 {
+		return nil
+	}
+
+	// family → suffix → 完整键
+	families := make(map[string]map[string]string)
+	for key := range r.Models {
+		for _, suf := range effortSuffixes {
+			full := "-" + suf
+			if !strings.HasSuffix(key, full) {
+				continue
+			}
+			base := strings.TrimSuffix(key, full)
+			if base == "" {
+				continue
+			}
+			if families[base] == nil {
+				families[base] = make(map[string]string, len(effortSuffixes))
+			}
+			families[base][suf] = key
+			break
+		}
+	}
+
+	out := make(map[string]string, len(families))
+	for base, tiers := range families {
+		if len(tiers) < 2 {
+			continue // 单档位不算一族
+		}
+		// 上游声明的默认模型若正好属于这一族，就以它为准。
+		if def := r.DefaultAgentModelID; def != "" {
+			if strings.HasPrefix(def, base+"-") {
+				if _, ok := tiers[strings.TrimPrefix(def, base+"-")]; ok {
+					out[base] = def
+					continue
+				}
+			}
+		}
+		for _, suf := range effortSuffixes {
+			if key, ok := tiers[suf]; ok {
+				out[base] = key
+				break
+			}
+		}
+	}
+	return out
+}
+
+// buildCatalog 生成给 agy 的模型发现清单。
+//
+// 关键结论（对着实测数据定）：只有 agentModelSorts 里列出的模型才是
+// agy 该展示、上游真能用的。models 表里另外十几条不能用：
+//
+//   - isInternal 的 chat_/tab_ 是 CLI 内部用途；
+//   - 没有 displayName 的是别名目标（gemini-3.8-flash-tiered）；
+//   - 图像生成模型（imageGenerationModelIds）走另一条链路；
+//   - 更要命的是**有 displayName 但名字与 key 不符**的一批：
+//     gemini-3-flash-agent 的 displayName 是 "Gemini 3.5 Flash (High)"，
+//     gemini-2.5-flash 是 "Gemini 3.5 Flash Lite"……agy 会按显示名反推
+//     ID，于是选 "Gemini 3.5 Flash (High)" 时发出上游并不存在的
+//     gemini-3.5-flash-high，回一句 "no longer available"。
+//
+// 真 agy 自己也只展示 agentModelSorts 那 13 个（实测 agy models）。
+// 所以这里**以 agentModelSorts 为准**，不再兜底补全其余模型。
+//
+// 只有上游没给 agentModelSorts 时才退回「全部合法条目按 ID 排序」，
+// 那是旧版上游的形态，聊胜于无。
+func buildCatalog(r *fetchAvailableModelsResponse) []CatalogEntry {
+	if r == nil || len(r.Models) == 0 {
+		return nil
+	}
+
+	entries := make(map[string]CatalogEntry, len(r.Models))
+	imageOnly := make(map[string]bool, len(r.ImageGenerationModelIDs))
+	for _, id := range r.ImageGenerationModelIDs {
+		imageOnly[id] = true
+	}
+
+	for id, raw := range r.Models {
+		if imageOnly[id] {
+			continue
+		}
+		var e modelEntry
+		if err := json.Unmarshal(raw, &e); err != nil {
+			continue
+		}
+		if e.IsInternal || e.DisplayName == "" {
+			continue
+		}
+		entries[id] = CatalogEntry{
+			ID:               id,
+			DisplayName:      e.DisplayName,
+			InputTokenLimit:  e.MaxTokens,
+			OutputTokenLimit: e.MaxOutputTokens,
+			SupportsImages:   e.SupportsImages,
+			SupportsThinking: e.SupportsThinking,
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// 首选：严格按 agentModelSorts 的顺序与成员，一个不多。
+	out := make([]CatalogEntry, 0, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for _, sort := range r.AgentModelSorts {
+		for _, g := range sort.Groups {
+			for _, id := range g.ModelIDs {
+				if seen[id] {
+					continue
+				}
+				if e, ok := entries[id]; ok {
+					out = append(out, e)
+					seen[id] = true
+				}
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	// 兜底：上游没给排序表。按 ID 排序，保证每次启动顺序稳定。
+	ids := make([]string, 0, len(entries))
+	for id := range entries {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		out = append(out, entries[id])
+	}
+	return out
 }
 
 // clip 截断并压平超长文本，避免把上游整页错误写进日志。

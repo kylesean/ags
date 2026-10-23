@@ -94,9 +94,11 @@ type Server struct {
 	// envelope 开启 Gemini REST ↔ CloudCode v1internal 双向改写。
 	envelope bool
 
-	aliasMu      sync.RWMutex
+	aliasMu sync.RWMutex
 	// modelAliases 是客户端请求模型名至上游实际模型标识的别名映射表。
 	modelAliases map[string]string
+	// catalog 是接管模型发现用的清单（见 serveModelDiscovery）。
+	catalog []CatalogEntry
 
 	// userAgent 是发送给上游的客户端身份标识头。
 	userAgent string
@@ -198,6 +200,123 @@ func (s *Server) SetModelAliases(m map[string]string) {
 	for k, v := range m {
 		s.modelAliases[k] = v
 	}
+}
+
+// CatalogEntry 是模型发现清单里的一项（与 cloudcode.CatalogEntry 同构，
+// 这里单独定义是为了不让 proxy 反向依赖 cloudcode）。
+type CatalogEntry struct {
+	ID               string
+	DisplayName      string
+	InputTokenLimit  int
+	OutputTokenLimit int
+	SupportsImages   bool
+	SupportsThinking bool
+}
+
+// SetModelCatalog 设置模型发现清单。空表 = 不接管发现（原样透传）。
+func (s *Server) SetModelCatalog(c []CatalogEntry) {
+	s.aliasMu.Lock()
+	defer s.aliasMu.Unlock()
+	if len(c) == 0 {
+		s.catalog = nil
+		return
+	}
+	s.catalog = append([]CatalogEntry(nil), c...)
+}
+
+// ModelCatalog 返回清单副本，供启动日志展示。
+func (s *Server) ModelCatalog() []CatalogEntry {
+	s.aliasMu.RLock()
+	defer s.aliasMu.RUnlock()
+	if len(s.catalog) == 0 {
+		return nil
+	}
+	return append([]CatalogEntry(nil), s.catalog...)
+}
+
+// serveModelDiscovery 回答 agy 的模型发现请求。
+//
+// agy ≥1.4 启动时会先要模型表（日志里叫 Tier 3 gateway discovery），
+// 两种线格式都会试：
+//
+//	GET /v1beta/models?pageSize=1000   Gemini 格式（agy models 走这条）
+//	GET /v1/models                     OpenAI 兼容格式
+//
+// 上游 CloudCode 根本没有这两个路由，我们一旦原样转过去就是 Google 的
+// HTML 404；agy 于是退回内置目录，发 gemini-3.1-pro-preview 这类已下线
+// 的名字，用户看到的是「一提问就 404」。两条都答，谁先来都能命中。
+//
+// 只在信封模式 + 清单非空时接管：-passthrough 是纯透传调试模式，
+// 清单为空说明我们自己也还不知道能发什么，那时透传更诚实。
+//
+// method 只认 GET。返回 handled=false 表示调用方继续走原有转发路径。
+func (s *Server) serveModelDiscovery(w http.ResponseWriter, r *http.Request) bool {
+	if !s.envelope || r.Method != http.MethodGet {
+		return false
+	}
+	openAIFormat := false
+	switch r.URL.Path {
+	case modelsDiscoveryPath:
+	case openAIModelsDiscoveryPath:
+		openAIFormat = true
+	default:
+		return false
+	}
+	entries := s.ModelCatalog()
+	if len(entries) == 0 {
+		return false
+	}
+
+	var payload any
+	if openAIFormat {
+		type modelJSON struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			OwnedBy string `json:"owned_by"`
+		}
+		out := struct {
+			Object string      `json:"object"`
+			Data   []modelJSON `json:"data"`
+		}{Object: "list", Data: make([]modelJSON, 0, len(entries))}
+		for _, e := range entries {
+			out.Data = append(out.Data, modelJSON{ID: e.ID, Object: "model", OwnedBy: "google"})
+		}
+		payload = out
+	} else {
+		type modelJSON struct {
+			Name                       string   `json:"name"`
+			DisplayName                string   `json:"displayName"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+			InputTokenLimit            int      `json:"inputTokenLimit"`
+			OutputTokenLimit           int      `json:"outputTokenLimit"`
+		}
+		out := struct {
+			Models []modelJSON `json:"models"`
+		}{Models: make([]modelJSON, 0, len(entries))}
+		for _, e := range entries {
+			out.Models = append(out.Models, modelJSON{
+				Name:                       e.ID,
+				DisplayName:                e.DisplayName,
+				SupportedGenerationMethods: []string{"generateContent", "streamGenerateContent"},
+				InputTokenLimit:            e.InputTokenLimit,
+				OutputTokenLimit:           e.OutputTokenLimit,
+			})
+		}
+		payload = out
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		// 编码失败不该发生；真发生了就让请求走原路径，别自己编响应。
+		return false
+	}
+	s.log.Printf("模型发现 %s → %d 个模型", r.URL.Path, len(entries))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+	return true
 }
 
 // ModelAliases 返回别名表副本，供启动日志展示。
@@ -500,11 +619,18 @@ func (s *Server) writeBadRequest(w http.ResponseWriter, message string) {
 		"error": map[string]any{"code": 400, "message": message},
 	})
 }
+
 // ServeHTTP 改写请求体 → （信封改写）→ 选号 → 注入 → 转发。
 //
 // 改写必须在选号之前完成：它可能直接失败（body 不是 JSON），
 // 那时还没必要去动账号、更不该发起刷新。
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 模型发现要在最前面：它不是生成请求，既不选号也不需要改写 body。
+	// agy ≥1.4 拿不到这份清单就会退回内置目录、发已下线的模型名。
+	if s.serveModelDiscovery(w, r) {
+		return
+	}
+
 	if len(s.stripFields) > 0 {
 		if err := s.rewriteBody(r); err != nil {
 			s.log.Printf("改写请求体失败 %s%s: %v", r.Host, r.URL.Path, err)
