@@ -23,7 +23,7 @@ func TestAllUsedKeysExist(t *testing.T) {
 		t.Skipf("找不到模块根目录，跳过: %v", err)
 	}
 
-	used, err := collectUsedKeys(root)
+	used, err := collectStrictKeys(root)
 	if err != nil {
 		t.Fatalf("扫描 key 失败: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestNoUnusedKeys(t *testing.T) {
 	if err != nil {
 		t.Skipf("找不到模块根目录，跳过: %v", err)
 	}
-	used, err := collectUsedKeys(root)
+	used, err := collectAllKeyLiterals(root)
 	if err != nil {
 		t.Fatalf("扫描 key 失败: %v", err)
 	}
@@ -79,15 +79,68 @@ func TestNoUnusedKeys(t *testing.T) {
 var keyCallRe = regexp.MustCompile(
 	`i18n\.(?:Tr|Trf|Errorf|Println|Printf)\(\s*"([A-Za-z0-9_]+\.[A-Za-z0-9._]+)"`)
 
-// collectUsedKeys 扫描模块下所有 .go 文件里引用的 key。
-func collectUsedKeys(root string) (map[string]bool, error) {
+// keyLiteralRe 抓任何形如 "namespace.name" 的字符串字面量。
+//
+// 为什么范围放这么宽：key 可能不直接传给 i18n.Tr，而是作为参数传给
+// 辅助函数（reportModelTable(..., "serve.modelsLoaded")）。只匹配直接
+// 调用会把这些判成「无人使用」，从而误删掉真实的 key。
+//
+// 收窄条件是「首段小写字母开头 + 至少一个点」，这足以排除文件路径
+// （含斜杠）、格式串（含 %）、域名（含多个点且首段像域名）里的常见形态；
+// 即便偶尔多算一个，副作用也只是「不报 unused」，不会漏报 missing。
+var keyLiteralRe = regexp.MustCompile(`"([a-z][A-Za-z0-9_]*\.[A-Za-z0-9_]+)"`)
+
+// collectStrictKeys 只收「确定被 i18n 解析」的 key：
+// 直接调用 Tr / Trf / Errorf / Println / Printf 且带完整命名空间。
+//
+// 用于「用了但表里没有」的检查 —— 这里必须精确，否则会把 state.json
+// 这类文件名当成 key，报出一堆假缺失。
+func collectStrictKeys(root string) (map[string]bool, error) {
+	return scanGoFiles(root, func(text string) map[string]bool {
+		out := map[string]bool{}
+		for _, m := range keyCallRe.FindAllStringSubmatch(text, -1) {
+			out[m[1]] = true
+		}
+		// 辅助函数的 key 参数（已知的少数几处，显式列出比宽松正则更可靠）。
+		for _, m := range keyParamRe.FindAllStringSubmatch(text, -1) {
+			out[m[1]] = true
+		}
+		return out
+	})
+}
+
+// collectAllKeyLiterals 收「所有形如 key 的字符串字面量」。
+//
+// 用于「表里有但没人用」的检查 —— 这里宁可宽松：多算一个只会让某个
+// 真实废弃 key 晚一点被发现，而漏算一个会导致真实的 key 被误删。
+func collectAllKeyLiterals(root string) (map[string]bool, error) {
+	return scanGoFiles(root, func(text string) map[string]bool {
+		out := map[string]bool{}
+		for _, m := range keyCallRe.FindAllStringSubmatch(text, -1) {
+			out[m[1]] = true
+		}
+		for _, m := range keyParamRe.FindAllStringSubmatch(text, -1) {
+			out[m[1]] = true
+		}
+		for _, m := range keyLiteralRe.FindAllStringSubmatch(text, -1) {
+			out[m[1]] = true
+		}
+		return out
+	})
+}
+
+// keyParamRe 抓「key 作为参数传给辅助函数」的已知形态。
+var keyParamRe = regexp.MustCompile(
+	`reportModelTable\([^)]*"([A-Za-z0-9_]+\.[A-Za-z0-9._]+)"`)
+
+// scanGoFiles 遍历模块下所有 .go 文件，对每个文件调用 extract 取 key 集合。
+func scanGoFiles(root string, extract func(string) map[string]bool) (map[string]bool, error) {
 	used := map[string]bool{}
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // 单个文件读不了不该让整轮失败
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil
 		}
 		if info.IsDir() {
-			// 跳过 vendor / .git / 构建产物
 			switch info.Name() {
 			case ".git", "vendor", "dist", "node_modules":
 				return filepath.SkipDir
@@ -97,12 +150,12 @@ func collectUsedKeys(root string) (map[string]bool, error) {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		b, err := os.ReadFile(path)
-		if err != nil {
+		b, readErr := os.ReadFile(path)
+		if readErr != nil {
 			return nil
 		}
-		for _, m := range keyCallRe.FindAllStringSubmatch(string(b), -1) {
-			used[m[1]] = true
+		for k := range extract(string(b)) {
+			used[k] = true
 		}
 		return nil
 	})

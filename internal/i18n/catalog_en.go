@@ -275,4 +275,6 @@ Run "<command> -h" for each command's flags.
 	"serve.defaultModel":      "upstream default model %s",
 	"serve.retryFail":         "background model-table retry failed (next attempt in %s): %v",
 	"tui.usingAccount":        "using account: %s (agy hides the identity in gateway mode — that is expected)",
+	"serve.modelsLoaded":      "model mapping loaded",
+	"serve.retryLoaded":       "background model-table retry succeeded",
 }

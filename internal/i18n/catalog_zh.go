@@ -273,4 +273,6 @@ var zhCatalog = map[string]string{
 	"serve.defaultModel":      "上游默认模型 %s",
 	"serve.retryFail":         "后台重试获取模型表失败（将在 %s 后重试）: %v",
 	"tui.usingAccount":        "当前账号: %s（agy 里看不到身份属正常：网关模式下它认为身份由网关提供）",
+	"serve.modelsLoaded":      "模型映射已加载",
+	"serve.retryLoaded":       "后台重试获取模型表成功",
 }

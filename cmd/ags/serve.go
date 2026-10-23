@@ -182,7 +182,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			// 模型发现清单：agy ≥1.4 会先 GET /v1beta/models 问网关。
 			// 没有它 agy 就退回内置目录并发已下线的模型名（一提问就 404）。
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
-			reportModelTable(models, *verbose, lg, "模型映射已加载")
+			reportModelTable(models, *verbose, lg, "serve.modelsLoaded")
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("%s", i18n.Trf("serve.defaultModel", models.DefaultAgentModelID))
 			}
@@ -286,7 +286,7 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 			}
 			srv.SetModelAliases(models.Aliases)
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
-			reportModelTable(models, verbose, lg, "后台重试获取模型表成功")
+			reportModelTable(models, verbose, lg, "serve.retryLoaded")
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("%s", i18n.Trf("serve.defaultModel", models.DefaultAgentModelID))
 			}
@@ -307,7 +307,8 @@ func envelopeState(on bool) string {
 //
 // 抽出来是因为启动路径与后台重试路径都要打同一套信息：任何一条告警
 // 漏在某条路径上，都会变成「静默降级」—— 正是这次要根治的那类问题。
-func reportModelTable(m *cloudcode.Models, verbose bool, lg *log.Logger, prefix string) {
+func reportModelTable(m *cloudcode.Models, verbose bool, lg *log.Logger, prefixKey string) {
+	prefix := i18n.Tr(prefixKey)
 	if verbose {
 		lg.Printf("%s (%d keys, %d aliases, %d discovered): %s",
 			prefix, m.Keys, len(m.Aliases), len(m.Catalog), formatAliases(m.Aliases))
