@@ -38,6 +38,32 @@ jobs:
       - name: Build Binary
         run: go build -v ./cmd/ags
 
+  # 多语言守卫：测试不能依赖宿主机的 LANG/LC_ALL。
+  # 本地 LANG=en_US 时用英文断言的测试全绿，CI 上 LANG=C（回落中文）
+  # 就红 —— 这类「本地绿、CI 红」浪费过一整轮排查。这里显式跑几种 locale。
+  locale:
+    name: Locale (${{ matrix.lang }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ['C', 'zh_CN.UTF-8', 'ja_JP.UTF-8', 'en_US.UTF-8']
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - name: Run Tests
+        env:
+          LANG: ${{ matrix.lang }}
+          LC_ALL: ${{ matrix.lang }}
+        run: go test ./...
+
   # Android/Termux 目标依赖较新的 Go 工具链（纯 Go 构建），单独门禁。
   android-build:
     name: Build (android/arm64)

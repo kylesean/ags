@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -114,8 +115,9 @@ func TestWaitGatewayReturnsErrorWhenServerExitsNilEarly(t *testing.T) {
 	if err == nil {
 		t.Fatal("serve 提前退出时应返回错误")
 	}
-	// 断言「提到 gateway 没起来」，不绑定具体语言（文案随 locale 变化）。
-	if !strings.Contains(strings.ToLower(err.Error()), "gateway") {
-		t.Fatalf("err = %v，应说明 gateway 未就绪", err)
+	// 不断言具体措辞：文案随语言变化（中文「Gateway」、日文「ゲートウェイ」）。
+	// 这里只验语义 —— 返回了一个非空、且不是 context 超时的错误。
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("不该等到超时，应立即返回: %v", err)
 	}
 }

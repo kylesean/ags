@@ -11,8 +11,19 @@ import (
 
 func f64(v float64) *float64 { return &v }
 
+// pinLang 把语言固定下来，让断言不依赖宿主机的 LANG/LC_ALL。
+// 这些测试校验的是「英文文案下的渲染结构」，CI 上 LANG 可能是 C，
+// 不固定就会在本地绿、CI 红。
+func pinLang(t *testing.T, l i18n.Lang) {
+	t.Helper()
+	old := i18n.Current()
+	i18n.SetLang(l)
+	t.Cleanup(func() { i18n.SetLang(old) })
+}
+
 // 进度条必须能表达三种极端值：满、空、越界钳制。
 func TestUsageBar(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	cases := []struct {
 		f      float64
 		filled int
@@ -44,6 +55,7 @@ func TestUsageBar(t *testing.T) {
 
 // 与 agy 原生一致的时长文案：分/时/天三级，且向上取整。
 func TestHumanizeReset(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		in   time.Duration
@@ -69,6 +81,7 @@ func TestHumanizeReset(t *testing.T) {
 
 // 窗口标题与 agy 原生一致：靠 window/bucketId 认，而不是英文 displayName。
 func TestWindowLabel(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	cases := []struct {
 		b    quota.Bucket
 		want string
@@ -88,6 +101,7 @@ func TestWindowLabel(t *testing.T) {
 
 // 有额度就说 available，归零就说还有多久刷新 —— 与 agy 一致。
 func TestBucketStatus(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	if got := bucketStatus(&quota.Bucket{RemainingFraction: f64(0.5)}, now); got != "Quota available" {
 		t.Errorf("有额度 = %q", got)
@@ -108,6 +122,7 @@ func TestBucketStatus(t *testing.T) {
 
 // 组标题全大写，与 agy 原生一致。
 func TestGroupTitle(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	g := quota.Group{DisplayName: "Claude and GPT models"}
 	if got := groupTitle(g); got != "CLAUDE AND GPT MODELS" {
 		t.Errorf("groupTitle = %q", got)
@@ -117,6 +132,7 @@ func TestGroupTitle(t *testing.T) {
 // 组顺序必须稳定：GEMINI → 3p → Argon，与 agy 原生排列一致。
 // 不排序的话 Go map 迭代顺序会让每次输出都变。
 func TestSortGroupsOrder(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	in := []quota.Group{
 		{DisplayName: "Gemini 4 Argon"},
 		{DisplayName: "Claude and GPT models"},
@@ -133,6 +149,7 @@ func TestSortGroupsOrder(t *testing.T) {
 
 // 端到端渲染：把一份真实形状的汇总渲染出来，检查关键要素都在。
 func TestRenderAccountUsage(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	now := time.Date(2026, 10, 24, 4, 0, 0, 0, time.UTC)
 	sum := &quota.Summary{Groups: []quota.Group{
 		{
@@ -179,6 +196,7 @@ func TestRenderAccountUsage(t *testing.T) {
 
 // 归零的窗口必须给出「还有多久刷新」，这是用户最关心的信息。
 func TestRenderAccountUsageShowsRefreshWhenEmpty(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	now := time.Date(2026, 10, 24, 4, 0, 0, 0, time.UTC)
 	sum := &quota.Summary{Groups: []quota.Group{{
 		DisplayName: "Gemini Models",
@@ -198,6 +216,7 @@ func TestRenderAccountUsageShowsRefreshWhenEmpty(t *testing.T) {
 
 // 没有额度组时要说清楚，不能静默打印一个空块。
 func TestRenderAccountUsageEmptyGroups(t *testing.T) {
+	pinLang(t, i18n.LangEN)
 	out := renderAccountUsage("A", "a@x", &quota.Summary{}, time.Now())
 	// 断言「明确说明找不到」，不绑定具体语言。
 	if !strings.Contains(out, i18n.Tr("usage.noGroups")) {
