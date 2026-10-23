@@ -111,8 +111,11 @@ func TestWaitGatewayReturnsErrorWhenServerExitsNilEarly(t *testing.T) {
 	defer cancel()
 
 	err := waitGateway(ctx, "127.0.0.1:0", serverErr)
-	if err == nil || !strings.Contains(err.Error(), "serve 在 Gateway ready 前退出") {
-		t.Fatalf("err = %v, want error mentioning 'serve 在 Gateway ready 前退出'", err)
+	if err == nil {
+		t.Fatal("serve 提前退出时应返回错误")
+	}
+	// 断言「提到 gateway 没起来」，不绑定具体语言（文案随 locale 变化）。
+	if !strings.Contains(strings.ToLower(err.Error()), "gateway") {
+		t.Fatalf("err = %v，应说明 gateway 未就绪", err)
 	}
 }
-

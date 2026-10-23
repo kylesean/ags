@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
+
 	"github.com/kylesean/ags/internal/pool"
 	"github.com/kylesean/ags/internal/quota"
 )
@@ -15,18 +17,18 @@ import (
 // 先验额度：无额度拒绝并提示（--force 强行）；写入后提醒重启 agy。
 func cmdUse(args []string) error {
 	fs := flag.NewFlagSet("use", flag.ContinueOnError)
-	upstream := fs.String("upstream", DefaultUpstream, "CloudCode 上游地址")
-	timeout := fs.Duration("timeout", 15*time.Second, "额度查询超时")
-	threshold := fs.Float64("quota-threshold", 0, "额度耗尽阈值")
-	force := fs.Bool("force", false, "无视额度耗尽强行切换")
+	upstream := fs.String("upstream", DefaultUpstream, i18n.Tr("flag.upstream"))
+	timeout := fs.Duration("timeout", 15*time.Second, i18n.Tr("flag.useTimeout"))
+	threshold := fs.Float64("quota-threshold", 0, i18n.Tr("flag.quotaThreshold"))
+	force := fs.Bool("force", false, i18n.Tr("flag.force"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("用法: ags use [--force] <name>")
+		return i18n.Errorf("use.usage")
 	}
 	if *timeout <= 0 {
-		return fmt.Errorf("-timeout 必须大于 0")
+		return i18n.Errorf("use.timeout")
 	}
 	name := fs.Arg(0)
 
@@ -41,10 +43,10 @@ func cmdUse(args []string) error {
 	// token 临近过期先续，保证查到的是该号当下真实额度。
 	if a.AccessToken == "" || (!a.Expiry.IsZero() && !time.Now().Before(a.Expiry.Add(-pool.DefaultRefreshSkew))) {
 		if a.RefreshToken == "" {
-			return fmt.Errorf("账号 %s 无可用 token 且无 refresh_token", name)
+			return i18n.Errorf("use.noToken", name)
 		}
 		if err := refreshAccount(ctx, a); err != nil {
-			return fmt.Errorf("刷新 %s 失败: %w", name, err)
+			return i18n.Errorf("use.refreshFail", name, err)
 		}
 		// 刷新落盘后重读，保证 keyring 写入与磁盘一致。
 		if a, err = pool.Load(name); err != nil {
@@ -54,11 +56,11 @@ func cmdUse(args []string) error {
 
 	sum, err := quota.Fetch(ctx, *upstream, a.AccessToken, upstreamUserAgent(ctx))
 	if err != nil {
-		return fmt.Errorf("查询 %s 额度失败: %w", name, err)
+		return i18n.Errorf("use.quotaFail", name, err)
 	}
 	if g := sum.Gemini(); g != nil {
 		if until, exhausted := g.Exhausted(*threshold, time.Now()); exhausted && !*force {
-			return fmt.Errorf("账号 %s 额度耗尽 (%s，冷却至 %s)，拒绝切换；用 --force 强行",
+			return i18n.Errorf("use.exhausted",
 				name, g.Describe(), pool.FormatCooldown(until))
 		}
 	}
@@ -66,7 +68,7 @@ func cmdUse(args []string) error {
 	if err := syncKeyringAccount(accountSwitch{name: a.Name, email: a.Email}); err != nil {
 		return err
 	}
-	fmt.Printf("已切换 keyring → %s (%s)\n", a.Name, a.Email)
-	fmt.Println("请重启 agy 生效（交互式会话执行 /resume 恢复）")
+	fmt.Println(i18n.Trf("use.switched", a.Name, a.Email))
+	fmt.Println(i18n.Tr("use.restart"))
 	return nil
 }

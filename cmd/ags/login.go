@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/oauth"
 	"github.com/kylesean/ags/internal/pool"
+	"github.com/kylesean/ags/internal/term"
 )
 
 // cmdLogin 自己走一遍 Google OAuth（授权码 + PKCE + 本地回环回调），把号直接写进池。
@@ -19,16 +21,16 @@ import (
 // 「agy 登录 → ags add」，那条路保留不删。
 func cmdLogin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
-	timeout := fs.Duration("timeout", 5*time.Minute, "等待浏览器完成登录的超时")
-	noBrowser := fs.Bool("no-browser", false, "只打印授权链接，不自动打开浏览器（SSH/无头场景）")
-	hint := fs.String("email", "", "预填的 Google 邮箱（可选）")
+	timeout := fs.Duration("timeout", 5*time.Minute, i18n.Tr("flag.timeout"))
+	noBrowser := fs.Bool("no-browser", false, i18n.Tr("flag.noBrowser"))
+	hint := fs.String("email", "", i18n.Tr("flag.email"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
 		// Go 的 flag 包遇到第一个非 flag 参数即停止解析，
 		// 所以标志必须写在 <name> 前面 —— 用法串必须如实反映。
-		return fmt.Errorf("用法: ags login [-timeout 5m] [-no-browser] [-email you@example.com] <name>\n（标志要写在 <name> 前面）")
+		return i18n.Errorf("login.usage")
 	}
 	name := fs.Arg(0)
 	if err := pool.ValidateName(name); err != nil {
@@ -37,10 +39,10 @@ func cmdLogin(ctx context.Context, args []string) error {
 
 	// 与 add 同样防覆盖：已存在的名字要求显式 drop，避免误冲。
 	if _, err := pool.Load(name); err == nil {
-		return fmt.Errorf("池里已有 %q，要覆盖请先 ags drop %s", name, name)
+		return i18n.Errorf("login.exists", name, name)
 	}
 
-	fmt.Printf("开始登录 → %s\n", name)
+	fmt.Println(i18n.Trf("login.start", name))
 	res, err := oauth.Login(ctx, oauth.Config{}, oauth.Options{
 		Timeout:      *timeout,
 		NoBrowser:    *noBrowser,
@@ -53,10 +55,10 @@ func cmdLogin(ctx context.Context, args []string) error {
 
 	existing, err := pool.FindByEmail(res.Email)
 	if err != nil {
-		return fmt.Errorf("登录成功但检查邮箱失败（凭据未保存）: %w", err)
+		return i18n.Errorf("login.emailChk", err)
 	}
 	if existing != nil {
-		return fmt.Errorf("邮箱 %s 已存在（账号 %s），请使用不同 Google 账号；如需替换请先 ags drop %s", res.Email, existing.Name, existing.Name)
+		return i18n.Errorf("login.emailDup", res.Email, existing.Name, existing.Name)
 	}
 
 	// 与 add 完全一致的池文件 schema，serve/pool/quota 零改动。
@@ -72,20 +74,24 @@ func cmdLogin(ctx context.Context, args []string) error {
 		AuthMethod:   oauth.AuthMethod,
 	}
 	if err := pool.Save(a); err != nil {
-		return fmt.Errorf("登录成功但入池失败（凭据未保存）: %w", err)
+		return i18n.Errorf("login.saveFail", err)
 	}
 
-	fmt.Printf("\n已入池 → %s\n", name)
-	fmt.Printf("  邮箱       %s\n", a.Email)
-	fmt.Printf("  过期时间   %s\n", fmtExpiry(a.Expiry))
-	fmt.Printf("  client_id  %s\n", orDash(a.ClientID))
-	fmt.Printf("  scope      %d 项\n", len(oauth.DefaultScopes))
+	labelW := labelColumnWidth
+	kv := func(label, value string) {
+		fmt.Printf("  %s%s\n", term.PadRight(label, labelW), value)
+	}
+	fmt.Printf("\n%s\n", i18n.Trf("login.saved", name))
+	kv(i18n.Tr("col.email"), a.Email)
+	kv(i18n.Tr("col.expiry"), fmtExpiry(a.Expiry))
+	kv("client_id", orDash(a.ClientID))
+	kv("scope", i18n.Trf("login.scope", len(oauth.DefaultScopes)))
 	if a.RefreshToken == "" {
-		fmt.Printf("  ⚠ 无 refresh_token，之后无法自动续期\n")
+		kv(i18n.Tr("common.warning"), i18n.Tr("login.noRefresh"))
 	} else {
-		fmt.Printf("  refresh    有（该号从此永久免登）\n")
+		kv("refresh", i18n.Tr("login.refreshOk"))
 	}
 	dir, _ := pool.Dir()
-	fmt.Printf("  存放       %s (0600)\n", dir)
+	kv(i18n.Tr("add.stored"), fmt.Sprintf("%s (0600)", dir))
 	return nil
 }

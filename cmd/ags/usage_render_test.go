@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/quota"
 )
 
@@ -198,7 +199,8 @@ func TestRenderAccountUsageShowsRefreshWhenEmpty(t *testing.T) {
 // 没有额度组时要说清楚，不能静默打印一个空块。
 func TestRenderAccountUsageEmptyGroups(t *testing.T) {
 	out := renderAccountUsage("A", "a@x", &quota.Summary{}, time.Now())
-	if !strings.Contains(out, "未找到任何额度组") {
+	// 断言「明确说明找不到」，不绑定具体语言。
+	if !strings.Contains(out, i18n.Tr("usage.noGroups")) {
 		t.Errorf("空汇总 = %q", out)
 	}
 }

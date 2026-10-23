@@ -9,18 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/pool"
 	"github.com/kylesean/ags/internal/quota"
+	"github.com/kylesean/ags/internal/term"
 )
 
-// barWidth 是进度条内部的格子数。agy 原生是 24 格左右，
-// 这里取 24 让同一行在 80 列终端里放得下（含方括号与百分比）。
+// barWidth 是进度条内部的格子数。
 const barWidth = 24
 
 // usageBar 画一条额度条：[████████░░░░░░░░░░░░░░░░] 47.44%
-//
-// 与 agy 原生 /usage 的视觉一致：方括号包住、填充表示「剩余」。
-// filled 用 █ 而不是色块字符，避免中文宽字符环境下宽度算错。
 func usageBar(fraction float64) string {
 	if fraction < 0 {
 		fraction = 0
@@ -38,8 +36,10 @@ func usageBar(fraction float64) string {
 	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled) + "]"
 }
 
-// humanizeReset 把「还有多久重置」说成人话，与 agy 的
-// "Refreshes in 26h 12m" 对齐。已经过期返回空串。
+// humanizeReset 把「还有多久重置」说成人话。
+//
+// 片段按语言拼接：中文「1天2小时」、英文「1d 2h」、日文「1日2時間」，
+// 数量词与语序都不同，所以不能用一个格式串硬套。
 func humanizeReset(reset, now time.Time) string {
 	if reset.IsZero() {
 		return ""
@@ -48,7 +48,7 @@ func humanizeReset(reset, now time.Time) string {
 	if d <= 0 {
 		return ""
 	}
-	// 向上取整到分钟：剩 30 秒说 "1m"，比 "0m" 有用。
+	// 向上取整到分钟：剩 30 秒说「1 分钟」，比「0 分钟」有用。
 	mins := int64((d + time.Minute - 1) / time.Minute)
 	days := mins / (24 * 60)
 	mins -= days * 24 * 60
@@ -57,61 +57,59 @@ func humanizeReset(reset, now time.Time) string {
 
 	switch {
 	case days > 0 && hours > 0:
-		return fmt.Sprintf("%dd %dh", days, hours)
+		return i18n.Trf("usage.durDaysHours", days, hours)
 	case days > 0:
-		return fmt.Sprintf("%dd", days)
+		return i18n.Trf("usage.durDays", days)
 	case hours > 0 && mins > 0:
-		return fmt.Sprintf("%dh %dm", hours, mins)
+		return i18n.Trf("usage.durHoursMins", hours, mins)
 	case hours > 0:
-		return fmt.Sprintf("%dh", hours)
+		return i18n.Trf("usage.durHours", hours)
 	default:
-		return fmt.Sprintf("%dm", mins)
+		return i18n.Trf("usage.durMins", mins)
 	}
 }
 
-// windowLabel 把上游的 bucket 名翻译成人话标题，与 agy 原生的
-// "Weekly Limit Remaining" / "Five Hour Limit Remaining" 一致。
+// windowLabel 把上游的 bucket 翻成当前语言的窗口标题。
 func windowLabel(b *quota.Bucket) string {
 	if b == nil {
 		return ""
 	}
-	// 优先按 window（语义键），bucketId 兜底。
 	switch strings.ToLower(b.Window) {
 	case "5h", "five_hour", "fivehour":
-		return "Five Hour Limit Remaining"
+		return i18n.Tr("usage.window5h")
 	case "weekly", "week":
-		return "Weekly Limit Remaining"
+		return i18n.Tr("usage.windowWeekly")
 	}
 	switch {
 	case strings.HasSuffix(b.BucketID, "-5h"):
-		return "Five Hour Limit Remaining"
+		return i18n.Tr("usage.window5h")
 	case strings.HasSuffix(b.BucketID, "-weekly"):
-		return "Weekly Limit Remaining"
+		return i18n.Tr("usage.windowWeekly")
 	}
 	return b.DisplayName
 }
 
-// bucketStatus 是固定句式的一句状态，与 agy 原生一致：
-// 归零说「什么时候刷新」，还有额度就说 "Quota available"。
+// bucketStatus 是窗口状态的一句话。
 func bucketStatus(b *quota.Bucket, now time.Time) string {
 	if b == nil {
 		return ""
 	}
 	rem, ok := b.Remaining()
 	if !ok {
-		return "Quota unknown"
+		return i18n.Tr("usage.unknown")
 	}
 	if rem > 0 {
-		return "Quota available"
+		return i18n.Tr("usage.available")
 	}
 	if in := humanizeReset(b.Reset(), now); in != "" {
-		return "Refreshes in " + in
+		return i18n.Trf("usage.refreshesIn", in)
 	}
-	return "Refreshes soon"
+	return i18n.Tr("usage.refreshesSoon")
 }
 
-// groupTitle 把额度组标题转成 agy 的写法：全大写。
-// 上游给的是 "Gemini Models" / "Claude and GPT models"。
+// groupTitle 是组标题。上游给的 displayName 是英文专名（"Gemini Models"、
+// "Claude and GPT models"），**不翻译** —— 它们与 agy 原生界面一致，
+// 翻了反而对不上。只做大小写整形。
 func groupTitle(g quota.Group) string {
 	name := strings.TrimSpace(g.DisplayName)
 	if name == "" {
@@ -120,8 +118,7 @@ func groupTitle(g quota.Group) string {
 	return strings.ToUpper(name)
 }
 
-// defaultGroupOrder 让输出顺序稳定：主 GEMINI 组在前，3p 组其次，
-// Argon 最后 —— 与 agy 原生的排列一致。
+// groupRank 让输出顺序稳定：GEMINI → 3p → Argon。
 func groupRank(displayName string) int {
 	n := strings.ToLower(displayName)
 	switch {
@@ -134,7 +131,6 @@ func groupRank(displayName string) int {
 	}
 }
 
-// sortGroups 返回按 rank 稳定排序后的组。
 func sortGroups(groups []quota.Group) []quota.Group {
 	out := append([]quota.Group(nil), groups...)
 	sort.SliceStable(out, func(i, j int) bool {
@@ -147,39 +143,41 @@ func sortGroups(groups []quota.Group) []quota.Group {
 	return out
 }
 
-// renderAccountUsage 渲染一个账号的完整额度块，模仿 agy 原生 /usage：
+// indent 是每行内容的前导空格（与标签同宽，便于阅读）。
+const usageIndent = "  "
+
+// renderAccountUsage 渲染一个账号的完整额度块。
 //
-//	Account: a@example.com
-//
-//	GEMINI MODELS
-//	  Models within this group: Gemini Flash, Gemini Pro
-//
-//	  Weekly Limit Remaining
-//	  [██████████░░░░░░░░░░░░░░] 47.44%
-//	  Refreshes in 26h 12m
-//
-//	Five Hour Limit Remaining
-//	[████████████████████████] 100.00%
-//	Quota available
+// 布局要点（多语言下最容易崩的地方）：
+//   - description 实测 200+ 字符，必须按终端宽度折行，否则溢出
+//   - 窗口标题与状态行长度随语言变化，一律走 Wrap
+//   - 进度条用固定格数，不随语言变化，保证各账号之间可纵向对比
 func renderAccountUsage(name, email string, sum *quota.Summary, now time.Time) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Account: %s\n", email)
+	b.WriteString(i18n.Trf("usage.account", email) + "\n")
 	if name != "" {
-		fmt.Fprintf(&b, "Pool: %s\n", name)
+		b.WriteString(i18n.Trf("usage.pool", name) + "\n")
 	}
 
 	groups := sortGroups(sum.Groups)
 	if len(groups) == 0 {
-		b.WriteString("\n未找到任何额度组（上游可能改接口或 UA 已过期）\n")
+		b.WriteString("\n" + i18n.Tr("usage.noGroups") + "\n")
 		return b.String()
 	}
 
+	// 可用宽度要扣掉缩进，否则折行后右侧会被终端截断。
+	width := term.TermWidth()
+	bodyWidth := width - len(usageIndent)
+	if bodyWidth < 20 {
+		bodyWidth = 20
+	}
+
 	for _, g := range groups {
-		b.WriteString("\n")
-		b.WriteString(groupTitle(g))
-		b.WriteString("\n")
+		b.WriteString("\n" + groupTitle(g) + "\n")
 		if desc := strings.TrimSpace(g.Description); desc != "" {
-			fmt.Fprintf(&b, "  %s\n", desc)
+			for _, line := range term.Wrap(desc, bodyWidth) {
+				b.WriteString(usageIndent + line + "\n")
+			}
 		}
 		for i := range g.Buckets {
 			bk := &g.Buckets[i]
@@ -188,15 +186,21 @@ func renderAccountUsage(name, email string, sum *quota.Summary, now time.Time) s
 				continue
 			}
 			b.WriteString("\n")
-			fmt.Fprintf(&b, "  %s\n", label)
+			for _, line := range term.Wrap(label, bodyWidth) {
+				b.WriteString(usageIndent + line + "\n")
+			}
+
 			rem, ok := bk.Remaining()
 			if !ok {
-				b.WriteString("  [                        ] 未知\n")
+				b.WriteString(usageIndent + "[" + strings.Repeat(" ", barWidth) + "] " +
+					i18n.Tr("usage.unknown") + "\n")
 				continue
 			}
-			fmt.Fprintf(&b, "  %s %.2f%%\n", usageBar(rem), rem*100)
+			b.WriteString(fmt.Sprintf("%s%s %.2f%%\n", usageIndent, usageBar(rem), rem*100))
 			if st := bucketStatus(bk, now); st != "" {
-				fmt.Fprintf(&b, "  %s\n", st)
+				for _, line := range term.Wrap(st, bodyWidth) {
+					b.WriteString(usageIndent + line + "\n")
+				}
 			}
 		}
 	}
@@ -204,33 +208,36 @@ func renderAccountUsage(name, email string, sum *quota.Summary, now time.Time) s
 }
 
 // formatUsageLine 是紧凑的一行式输出（表格用），保留给脚本/管道。
+//
+// 注意：这里是**机器可读**格式，刻意不本地化 —— 中英混排的表格会让
+// awk/cut 的列切分变得不可预测。表头只在 -compact 时本地化。
 func formatUsageLine(a *pool.Account, sum *quota.Summary) string {
 	g := sum.Gemini()
 	if g == nil {
-		return fmt.Sprintf("%s\t%s\t未找到 GEMINI 额度组", a.Name, a.Email)
+		return fmt.Sprintf("%s\t%s\t%s", a.Name, a.Email, i18n.Tr("usage.noGeminiGroup"))
 	}
 	return fmt.Sprintf("%s\t%s\t%s", a.Name, a.Email, g.Describe())
 }
 
 func formatUsageError(a *pool.Account, err error) string {
-	return fmt.Sprintf("%s\t%s\t查询失败: %v", a.Name, a.Email, err)
+	return fmt.Sprintf("%s\t%s\t%s: %v", a.Name, a.Email, i18n.Tr("common.failed"), err)
 }
 
 // cmdUsage 直接查询账号池的真实额度，不依赖 agy 的 /usage 命令。
 func cmdUsage(args []string) error {
 	fs := flag.NewFlagSet("usage", flag.ContinueOnError)
-	account := fs.String("account", "", "只查询指定账号")
-	upstream := fs.String("upstream", DefaultUpstream, "CloudCode 上游地址")
-	timeout := fs.Duration("timeout", 15*time.Second, "每个账号的额度查询超时")
-	compact := fs.Bool("compact", false, "单行紧凑输出（脚本/管道用）")
+	account := fs.String("account", "", i18n.Tr("flag.account"))
+	upstream := fs.String("upstream", DefaultUpstream, i18n.Tr("flag.upstream"))
+	timeout := fs.Duration("timeout", 15*time.Second, i18n.Tr("flag.usageTimeout"))
+	compact := fs.Bool("compact", false, i18n.Tr("flag.compact"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("usage 不接受位置参数")
+		return i18n.Errorf("usage.noArgs")
 	}
 	if *timeout <= 0 {
-		return fmt.Errorf("-timeout 必须大于 0")
+		return i18n.Errorf("use.timeout")
 	}
 
 	accounts, err := resolveCandidates(*account)
@@ -275,20 +282,19 @@ func cmdUsage(args []string) error {
 	}
 	wg.Wait()
 
-	var errs []error
 	if *compact {
-		fmt.Println("账号\t邮箱\t额度")
+		fmt.Println(i18n.Tr("usage.compactHeader"))
 	}
 	now := time.Now()
 	failed := 0
 	for _, r := range results {
 		if r.err != nil {
-			errs = append(errs, r.err)
 			failed++
 			if *compact {
 				fmt.Println(formatUsageError(r.acc, r.err))
 			} else {
-				fmt.Printf("Account: %s\n查询失败: %v\n\n", r.acc.Email, r.err)
+				fmt.Print(i18n.Trf("usage.accountFail", r.acc.Email, r.err))
+				fmt.Println()
 			}
 			continue
 		}
@@ -300,10 +306,9 @@ func cmdUsage(args []string) error {
 		fmt.Println()
 	}
 
-	// 错误已经逐账号打印过了：这里只回一个「有多少个失败」的摘要，
-	// 让退出码非零，但别把同样的三条错误再刷一遍。
-	if len(errs) > 0 {
-		return fmt.Errorf("%d/%d 个账号查询失败", failed, len(accounts))
+	// 错误已经逐账号打印过了：只回一句摘要，别让 main 再刷一遍。
+	if failed > 0 {
+		return i18n.Errorf("usage.failSummary", failed, len(accounts))
 	}
 	return nil
 }

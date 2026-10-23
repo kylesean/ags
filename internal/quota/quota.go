@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kylesean/ags/internal/i18n"
 )
 
 // MethodRetrieveUserQuotaSummary 是取额度汇总的方法路径。
@@ -257,26 +259,28 @@ func (g *Gemini) Exhausted(threshold float64, now time.Time) (time.Time, bool) {
 // Argon 有额度窗口时追加一段，便于解释「主组还有额度却切号」。
 func (g *Gemini) Describe() string {
 	if g == nil {
-		return "未找到 GEMINI 组"
+		return i18n.Tr("quota.notFound")
 	}
-	s := fmt.Sprintf("5h %s, 周 %s", g.FiveHour.describe(), g.Weekly.describe())
+	s := fmt.Sprintf("%s %s, %s %s",
+		i18n.Tr("quota.fiveHour"), g.FiveHour.describe(),
+		i18n.Tr("quota.week"), g.Weekly.describe())
 	if g.Argon != nil {
-		s += fmt.Sprintf(", Argon 周 %s", g.Argon.describe())
+		s += fmt.Sprintf(", %s %s", i18n.Tr("quota.argon"), g.Argon.describe())
 	}
 	return s
 }
 
 func (b *Bucket) describe() string {
 	if b == nil {
-		return "-"
+		return i18n.Tr("common.dash")
 	}
 	rem, ok := b.Remaining()
 	if !ok {
-		return "未知"
+		return i18n.Tr("quota.unknown")
 	}
 	s := fmt.Sprintf("%.2f%%", rem*100)
 	if t := b.Reset(); !t.IsZero() {
-		s += fmt.Sprintf(" (重置 %s)", t.Local().Format("01-02 15:04"))
+		s += " " + i18n.Trf("quota.resetAt", t.Local().Format("01-02 15:04"))
 	}
 	return s
 }

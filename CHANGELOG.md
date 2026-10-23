@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+### Added
+- **终端多语言（中/英/日）**：新增 `internal/i18n`。语言按 POSIX 优先级探测 ——
+  `-lang` 参数 > `AGS_LANG` > `LC_ALL` > `LC_MESSAGES` > `LANG` > 系统区域设置
+  （macOS 读 `AppleLanguages`、Windows 读 `GetUserDefaultUILanguage`、Linux 交给 env）。
+  不用操作系统名判断语言：中文用户完全可能装着英文系统，locale 才是用户意图。
+- **`-lang` 开关**：`ags -lang en usage`。它会在进入子命令前被摘掉，
+  不会被当成未知 flag 透传给 agy。
+
+### Fixed
+- **多语言下的表格错位**：新增 `internal/term`，按**视觉列宽**（CJK 占 2 列）
+  对齐、截断与折行。旧实现「超宽就原样返回」会让整张表往右偏；现在
+  `PadRight` 保证返回值恰好是目标宽度（必要时截断加省略号）。
+- **窄终端溢出**：`list` 的列宽现在会按 `COLUMNS` 整体收缩（从最宽列开始砍），
+  保证总宽不超屏；`usage` 的组描述（实测 200+ 字符）按终端宽度折行。
+  实测 40/50/60/80 列下最长行分别为 38/48/58/78。
+- **`list` 名字列硬编码 12 列**：改为按最长名字自适应（上限 20），
+  名字一长不再顶歪后面的列。
+- **过期时间出现 `38m0s`**：`Round(time.Minute)` 之后仍会带 `0s`，
+  改为按分钟格式化。
+- **`ags -lang en --help` 打印 agy 帮助**：`-lang` 未被识别为自有开关，
+  整个参数被当作 TUI 参数透传。
+
 ## [v0.8.1] - 2026-10-24
 
 ### Fixed

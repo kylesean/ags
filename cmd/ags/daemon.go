@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/pool"
 )
 
@@ -87,17 +88,17 @@ func pendingRestartHint(curEmail string, st *daemonState) string {
 // 不碰流量、不托管 agy；切换后提醒重启（交互式 /resume 恢复）。
 func cmdDaemon(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
-	interval := fs.Duration("quota-interval", DefaultQuotaInterval, "额度轮询间隔；设为 0 则只跑一轮即退")
-	threshold := fs.Float64("quota-threshold", 0, "额度耗尽阈值")
-	account := fs.String("account", "", "只看管指定账号；留空则看管池中全部")
+	interval := fs.Duration("quota-interval", DefaultQuotaInterval, i18n.Tr("flag.quotaIntervalD"))
+	threshold := fs.Float64("quota-threshold", 0, i18n.Tr("flag.quotaThreshold"))
+	account := fs.String("account", "", i18n.Tr("flag.daemonAccount"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("daemon 不接受位置参数")
+		return i18n.Errorf("serve.noPositional")
 	}
 	if *interval < 0 {
-		return fmt.Errorf("-quota-interval 不能为负（收到 %s）", *interval)
+		return i18n.Errorf("serve.intervalNegative", *interval)
 	}
 	lg := log.New(os.Stderr, "[daemon] ", log.LstdFlags|log.Lmsgprefix)
 
@@ -115,7 +116,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		}
 		cands = pool.Unique(accounts)
 		if len(cands) == 0 {
-			return fmt.Errorf("账号池为空，先 ags login <name> 或 ags add <name>")
+			return i18n.Errorf("serve.daoPoolEmpty")
 		}
 	}
 
@@ -124,7 +125,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 
 	qw.check(ctx, true)
 	if _, err := daemonSyncOnce(ctx, sel, lg); err != nil {
-		lg.Printf("首轮无可用账号: %v", err)
+		lg.Printf("%s", i18n.Trf("serve.daoFirstFail", err))
 	}
 	if *interval <= 0 {
 		return nil
@@ -136,7 +137,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		case <-time.After(jitteredInterval(*interval)):
 			qw.check(ctx, false)
 			if _, err := daemonSyncOnce(ctx, sel, lg); err != nil {
-				lg.Printf("暂无可用账号: %v", err)
+				lg.Printf("%s", i18n.Trf("serve.daoNone", err))
 			}
 		}
 	}
@@ -157,8 +158,8 @@ func daemonSyncOnce(ctx context.Context, sel *pool.Selector, lg *log.Logger) (bo
 		return false, err
 	}
 	if err := writeDaemonState(defaultDaemonStatePath(), best.Name, best.Email); err != nil {
-		lg.Printf("落盘选中状态失败: %v", err)
+		lg.Printf("%s", i18n.Trf("serve.daoStateFail", err))
 	}
-	lg.Printf("已切换 keyring → %s (%s)，请重启 agy 生效（交互式 /resume 恢复）", best.Name, best.Email)
+	lg.Printf("%s", i18n.Trf("serve.switched", best.Name, best.Email))
 	return true, nil
 }

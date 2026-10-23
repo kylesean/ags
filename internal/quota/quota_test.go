@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kylesean/ags/internal/i18n"
 )
 
 // realSummary 是 retrieveUserQuotaSummary 的实测响应原文（截掉与 GEMINI 无关的长文案）。
@@ -239,7 +241,8 @@ func TestGeminiNilReceiver(t *testing.T) {
 	if _, ex := g.Exhausted(0, time.Now()); ex {
 		t.Error("nil 不应判成耗尽")
 	}
-	if s := g.Describe(); !strings.Contains(s, "未找到") {
+	// 断言「提到找不到」，不绑定具体语言。
+	if s := g.Describe(); !strings.Contains(s, i18n.Tr("quota.notFound")) {
 		t.Errorf("Describe() = %q", s)
 	}
 }
@@ -249,7 +252,8 @@ func TestDescribe(t *testing.T) {
 	s := g.Describe()
 	t.Logf("摘要: %s", s)
 	wantTime := g.FiveHour.Reset().Local().Format("15:04")
-	for _, want := range []string{"5h", "0.00%", "周", "100.00%", wantTime} {
+	// 窗口名用 i18n 的 key 取，避免绑死某一种语言。
+	for _, want := range []string{i18n.Tr("quota.fiveHour"), "0.00%", i18n.Tr("quota.week"), "100.00%", wantTime} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Describe()=%q 缺 %q", s, want)
 		}

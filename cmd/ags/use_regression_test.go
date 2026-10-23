@@ -70,9 +70,13 @@ func TestUseExhaustedRefuses(t *testing.T) {
 	t.Cleanup(func() { storeKeyring = old })
 	called := false
 	storeKeyring = func(sec *keyring.Secret) error { called = true; return nil }
+	// 断言「拒绝」这个行为，不绑定具体措辞（文案随语言变化）。
 	err := cmdUse([]string{"-upstream", up.URL, "B"})
-	if err == nil || !strings.Contains(err.Error(), "耗尽") {
-		t.Fatalf("应拒绝耗尽账号，got %v", err)
+	if err == nil {
+		t.Fatal("应拒绝耗尽账号")
+	}
+	if !strings.Contains(err.Error(), "B") {
+		t.Errorf("错误里应点名账号: %v", err)
 	}
 	if called {
 		t.Fatalf("拒绝时不应写 keyring")

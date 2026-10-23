@@ -19,6 +19,20 @@ go install github.com/kylesean/ags/cmd/ags@latest
 
 **Termux (Android)**: the install script detects Termux, downloads the `android/arm64` archive, and installs it to `$PREFIX/bin`. Termux has no desktop Secret Service, so `ags` automatically falls back to agy's local credential file `~/.gemini/antigravity-cli/antigravity-oauth-token` (override with `AGY_TOKEN_FILE`).
 
+## Languages
+
+Terminal output is available in Simplified Chinese / English / Japanese,
+selected automatically from your locale:
+
+```sh
+ags                 # follows LANG / LC_ALL
+ags -lang en        # force English
+AGS_LANG=ja ags     # force Japanese
+```
+
+Other languages fall back to Chinese. Tables align by visual width (CJK takes
+two columns) and shrink to fit narrow terminals.
+
 ## Quickstart
 
 Pool your accounts once:

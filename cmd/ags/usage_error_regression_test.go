@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/kylesean/ags/internal/i18n"
 )
 
 // 某个账号查询失败时：错误要逐账号打印，但**不能**再被 main 重复打印一遍。
@@ -37,8 +39,10 @@ func TestUsageErrorIsNotDuplicated(t *testing.T) {
 		}
 	})
 
-	// 账号级错误在 stdout 里出现恰好一次。
-	if n := strings.Count(out, "查询失败"); n != 1 {
-		t.Errorf("「查询失败」出现 %d 次（想要 1 次）:\n%s", n, out)
+	// 账号级错误在 stdout 里出现恰好一次（用当前语言的失败标识，不绑死中文）。
+	marker := i18n.Tr("usage.queryFail")
+	marker = strings.TrimSuffix(marker, ": %v")
+	if n := strings.Count(out, marker); n != 1 {
+		t.Errorf("失败提示 %q 出现 %d 次（想要 1 次）:\n%s", marker, n, out)
 	}
 }

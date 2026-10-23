@@ -19,6 +19,18 @@ go install github.com/kylesean/ags/cmd/ags@latest
 
 **Termux（Android）**：一键脚本会自动识别 Termux，下载 `android/arm64` 包并安装到 `$PREFIX/bin`。Termux 没有桌面 Secret Service，`ags` 会自动降级读写 agy 的本地凭据文件 `~/.gemini/antigravity-cli/antigravity-oauth-token`（可用 `AGY_TOKEN_FILE` 覆盖）。
 
+## 多语言
+
+终端界面支持简体中文 / English / 日本語，按系统 locale 自动选择：
+
+```sh
+ags                 # 跟随 LANG / LC_ALL
+ags -lang en        # 强制英文
+AGS_LANG=ja ags     # 强制日文
+```
+
+其它语言回落到中文。表格按视觉列宽（中文占 2 列）对齐，窄终端会自动收缩。
+
 ## 快速开始
 
 账号只需入池一次：

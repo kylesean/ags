@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kylesean/ags/internal/cloudcode"
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/pool"
 	"github.com/kylesean/ags/internal/proxy"
 	"github.com/kylesean/ags/internal/token"
@@ -65,35 +66,32 @@ func cmdServe(ctx context.Context, args []string) error {
 
 func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	listen := fs.String("listen", "127.0.0.1:7897", "监听地址")
-	upstream := fs.String("upstream", DefaultUpstream, "上游地址")
-	account := fs.String("account", "", "指定用池中哪个账号；留空则用池里全部，池空则回落 keyring 当前账号")
-	refresh := fs.Bool("refresh", false, "启动时先强制刷新一次 access_token")
-	verbose := fs.Bool("v", false, "打印每个请求的选号与转发结果")
-	logFile := fs.String("log-file", "", "日志文件；留空输出到 stderr")
-	ua := fs.String("user-agent", defaultUserAgent, "发给上游的 User-Agent（许可证闸门，一般别改）")
+	listen := fs.String("listen", "127.0.0.1:7897", i18n.Tr("flag.listen"))
+	upstream := fs.String("upstream", DefaultUpstream, i18n.Tr("flag.upstream"))
+	account := fs.String("account", "", i18n.Tr("flag.serveAccount"))
+	refresh := fs.Bool("refresh", false, i18n.Tr("flag.refresh"))
+	verbose := fs.Bool("v", false, i18n.Tr("flag.verbose"))
+	logFile := fs.String("log-file", "", i18n.Tr("flag.logFile"))
+	ua := fs.String("user-agent", defaultUserAgent, i18n.Tr("flag.userAgent"))
 	passthrough := fs.Bool("passthrough", false,
 		"关闭信封改写，纯透传（调试用；此时上游不会接受 agy 的 Gemini 路径）")
 	noModelAlias := fs.Bool("no-model-alias", false,
 		"不拉模型表、不做模型名映射/模型发现（调试用；agy 会退回内置目录并发已下线的模型名）")
-	quotaInterval := fs.Duration("quota-interval", DefaultQuotaInterval,
-		"GEMINI 额度轮询间隔；设为 0 关闭额度检测（关了就不会自动换号）")
-	quotaThreshold := fs.Float64("quota-threshold", 0,
-		"GEMINI 剩余比例 ≤ 该值即判耗尽并换号（0 = 归零才切，不浪费残量）")
+	quotaInterval := fs.Duration("quota-interval", DefaultQuotaInterval, i18n.Tr("flag.quotaInterval"))
+	quotaThreshold := fs.Float64("quota-threshold", 0, i18n.Tr("flag.quotaThreshold0"))
 	var stripFields stringList
-	fs.Var(&stripFields, "strip-field",
-		"转发前从请求体顶层删掉这个 JSON 字段，可重复（云封信封下 agy 的 body 原样可用，一般用不到）")
+	fs.Var(&stripFields, "strip-field", i18n.Tr("flag.stripField"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("serve 不接受位置参数")
+		return i18n.Errorf("usage.noArgs")
 	}
 	if *quotaThreshold < 0 || *quotaThreshold > 1 {
-		return fmt.Errorf("-quota-threshold 需在 0~1 之间（收到 %v）", *quotaThreshold)
+		return i18n.Errorf("serve.thresholdRange", *quotaThreshold)
 	}
 	if *quotaInterval < 0 {
-		return fmt.Errorf("-quota-interval 不能为负（收到 %s）", *quotaInterval)
+		return i18n.Errorf("serve.intervalNegative", *quotaInterval)
 	}
 
 	var lg *log.Logger
@@ -101,11 +99,11 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 		lg = log.New(os.Stderr, "[serve] ", log.LstdFlags|log.Lmsgprefix)
 	} else {
 		if err := os.MkdirAll(filepath.Dir(*logFile), 0o700); err != nil {
-			return fmt.Errorf("创建日志目录失败: %w", err)
+			return i18n.Errorf("probe.dirFail", err)
 		}
 		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
-			return fmt.Errorf("打开日志文件失败: %w", err)
+			return i18n.Errorf("probe.openFail", err)
 		}
 		defer f.Close()
 		lg = log.New(f, "[serve] ", log.LstdFlags|log.Lmsgprefix)
@@ -127,12 +125,12 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 		if err != nil {
 			// 一个账号失败不该阻止整个 serve 启动，
 			// 但如果连一个可用账号都挑不出来，那就必须报错。
-			lg.Printf("强制刷新部分失败: %v", err)
+			lg.Printf("%s", i18n.Trf("pool.refreshPartial", err))
 			if _, pickErr := sel.Pick(ctx); pickErr != nil {
-				return fmt.Errorf("刷新后仍无可用账号: %w", pickErr)
+				return i18n.Errorf("pool.noUsableAfterRefresh", pickErr)
 			}
 		} else {
-			lg.Printf("已强制刷新全部账号")
+			lg.Printf("%s", i18n.Tr("pool.refreshedAll"))
 		}
 	}
 
@@ -152,7 +150,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 	}
 	srv.StripFields(stripFields...)
 	if n := len(stripFields); n > 0 {
-		lg.Printf("剥离请求体字段: %s", strings.Join(stripFields, ", "))
+		lg.Printf("%s", i18n.Trf("serve.stripFields", strings.Join(stripFields, ", ")))
 	}
 
 	// 启动时先挑一次，让错误在监听前就暴露出来，而不是等第一个请求 503。
@@ -177,7 +175,7 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			first.AccessToken, srv.UserAgentForUpstream())
 		cancel()
 		if aliasErr != nil {
-			lg.Printf("获取模型表失败，将在后台重试（当前部分模型可能 404）: %v", aliasErr)
+			lg.Printf("%s", i18n.Trf("serve.modelsFail", aliasErr))
 			go retryFetchModelAliases(ctx, sel, *upstream, srv, *verbose, lg, 10*time.Second)
 		} else {
 			srv.SetModelAliases(models.Aliases)
@@ -190,14 +188,14 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			}
 		}
 	}
-	lg.Printf("监听 %s → %s", *listen, srv.Upstream())
+	lg.Printf("%s", i18n.Trf("serve.listening", *listen, srv.Upstream()))
 	lg.Printf("信封改写 %s，User-Agent %s",
 		map[bool]string{true: "开", false: "关（纯透传）"}[srv.Envelope()], *ua)
-	lg.Printf("账号 %s (%s)，token 过期 %s", first.Name, first.Email, fmtExpiry(first.Expiry))
+	lg.Printf("%s", i18n.Trf("serve.account", first.Name, first.Email, fmtExpiry(first.Expiry)))
 	if n := len(cands); n > 1 {
-		lg.Printf("池中候选 %d 个：%s", n, joinNames(sel.Candidates()))
+		lg.Printf("%s", i18n.Trf("serve.candidates", n, joinNames(sel.Candidates())))
 	}
-	lg.Printf("Gateway ready: %s", gatewayURL(*listen))
+	lg.Printf("%s", i18n.Trf("serve.ready", gatewayURL(*listen)))
 
 	// 额度检测：启动先同步跑一轮，让第一个请求就已经知道哪些号没额度；
 	// 之后交给后台按 interval 轮询。首轮失败只告警，不拦启动 ——
@@ -211,15 +209,15 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 		// 启动首轮额度检查可能已经冷却了 first；重新 Pick 一次，
 		// 让 gui 的 Keyring 同步拿到真正可用的账号。
 		if next, pickErr := sel.Pick(ctx); pickErr != nil {
-			lg.Printf("启动后重新选号失败: %v", pickErr)
+			lg.Printf("%s", i18n.Trf("serve.repickFail", pickErr))
 		} else if next.Name != first.Name {
 			first = next
 			adapter.setInitialAccount(first.Name, first.Email)
 		}
 		go qw.run(ctx, *quotaInterval)
-		lg.Printf("额度检测 每 %s 查一次 GEMINI 组（阈值 %.3f）", *quotaInterval, *quotaThreshold)
+		lg.Printf("%s", i18n.Trf("serve.quotaInterval", *quotaInterval, *quotaThreshold))
 	} else {
-		lg.Printf("额度检测 已关闭（-quota-interval=0），不会自动换号")
+		lg.Printf("%s", i18n.Tr("serve.quotaOff"))
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -240,11 +238,11 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 
 	select {
 	case <-ctx.Done():
-		lg.Printf("收到退出信号，优雅关闭…")
+		lg.Printf("%s", i18n.Tr("serve.shutdown"))
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("关闭失败: %w", err)
+			return i18n.Errorf("serve.shutdownFail", err)
 		}
 		return nil
 	case err := <-errCh:
@@ -304,20 +302,20 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 // 漏在某条路径上，都会变成「静默降级」—— 正是这次要根治的那类问题。
 func reportModelTable(m *cloudcode.Models, verbose bool, lg *log.Logger, prefix string) {
 	if verbose {
-		lg.Printf("%s：模型表 %d 个键，别名 %d 条，发现清单 %d 个：%s",
+		lg.Printf("%s (%d keys, %d aliases, %d discovered): %s",
 			prefix, m.Keys, len(m.Aliases), len(m.Catalog), formatAliases(m.Aliases))
 	} else {
-		lg.Printf("%s：%d 个别名，发现清单 %d 个模型",
+		lg.Printf("%s (%d aliases, %d discovered models)",
 			prefix, len(m.Aliases), len(m.Catalog))
 	}
 
 	// 兜底清单的告警（displayName 与 key 错位会让 agy 选到不存在的模型）。
 	for _, w := range m.Warnings {
-		lg.Printf("警告: %s", w)
+		lg.Printf("%s: %s", i18n.Tr("common.warning"), w)
 	}
 	// UA 过期是静默降级：接口 200 但少给模型与额度组。
 	if warn := uaCapabilityWarning(m); warn != "" {
-		lg.Printf("警告: %s", warn)
+		lg.Printf("%s: %s", i18n.Tr("common.warning"), warn)
 	}
 }
 
@@ -365,7 +363,7 @@ func (p *selectorPicker) endRequest() {
 
 	if sw != nil && p.onSwitch != nil {
 		if p.log != nil {
-			p.log.Printf("在飞请求全部完成，触发账号切换并同步: %s (%s)", sw.name, sw.email)
+			p.log.Printf("%s", i18n.Trf("serve.inflightSwitch", sw.name, sw.email))
 		}
 		p.onSwitch(sw.name, sw.email)
 	}
@@ -383,7 +381,7 @@ func (p *selectorPicker) setInitialAccount(name, email string) {
 func (p *selectorPicker) ReportStatus(name string, statusCode int) {
 	if statusCode == http.StatusTooManyRequests {
 		if p.log != nil {
-			p.log.Printf("上游返回 429，账号 %s 进入临时冷却 (1 分钟)", name)
+			p.log.Printf("%s", i18n.Trf("serve.got429", name))
 		}
 		p.sel.SetCooldown(name, time.Now().Add(time.Minute))
 		if p.on429 != nil {
@@ -395,7 +393,7 @@ func (p *selectorPicker) ReportStatus(name string, statusCode int) {
 		// token 被吊销/失效但本地 Expiry 尚远时，靠 skew 自愈太慢：
 		// 先让该号避让 30s 并唤醒额度轮询，下次 Pick 即换号。
 		if p.log != nil {
-			p.log.Printf("上游返回 401，账号 %s 进入临时冷却 (30 秒)", name)
+			p.log.Printf("%s", i18n.Trf("serve.got401", name))
 		}
 		p.sel.SetCooldown(name, time.Now().Add(30*time.Second))
 		if p.on429 != nil {
@@ -424,7 +422,7 @@ func (p *selectorPicker) Pick(ctx context.Context) (*proxy.Account, error) {
 	p.mu.Unlock()
 
 	if p.log != nil && (p.verbose || changed) {
-		p.log.Printf("选号 %s (%s) 过期 %s", a.Name, a.Email, fmtExpiry(a.Expiry))
+		p.log.Printf("%s", i18n.Trf("serve.pickAccount", a.Name, a.Email, fmtExpiry(a.Expiry)))
 	}
 	if immediateSwitch {
 		p.onSwitch(a.Name, a.Email)
@@ -439,7 +437,7 @@ func resolveCandidates(name string) ([]*pool.Account, error) {
 	if name != "" {
 		a, err := pool.Load(name)
 		if err != nil {
-			return nil, fmt.Errorf("加载账号 %q 失败: %w", name, err)
+			return nil, i18n.Errorf("pool.loadAccountFail", name, err)
 		}
 		return []*pool.Account{a}, nil
 	}
@@ -458,11 +456,11 @@ func resolveCandidates(name string) ([]*pool.Account, error) {
 	// 池为空：直接用 keyring 里那一份，让链路先跑通（只读，不写 keyring）。
 	sec, email, err := keyringCurrentAdapter()
 	if err != nil {
-		return nil, fmt.Errorf("账号池为空，且读取 keyring 失败: %w", err)
+		return nil, i18n.Errorf("pool.noCandidates", err)
 	}
 	claims, claimsErr := sec.Claims()
 	if claimsErr != nil {
-		return nil, fmt.Errorf("解析身份失败: %w", claimsErr)
+		return nil, i18n.Errorf("pool.claimsFail", claimsErr)
 	}
 	return []*pool.Account{{
 		Name:            "keyring",

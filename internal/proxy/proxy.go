@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/pool"
 )
 
@@ -57,7 +58,7 @@ func Static(a *Account) Picker { return &staticPicker{a} }
 
 func (p *staticPicker) Pick(context.Context) (*Account, error) {
 	if p.a == nil || p.a.AccessToken == "" {
-		return nil, errors.New("没有可用账号")
+		return nil, errors.New(i18n.Tr("serve.noAccount"))
 	}
 	return p.a, nil
 }
