@@ -62,7 +62,7 @@ The daemon rewrites the Keyring to an account that still has quota, but it does 
   ```
 
   Restart `agy` after switching (`/resume` to restore a session).
-- **Inspect**: `ags status` shows the current Keyring identity and whether a restart is needed; `ags usage` shows each account's real quota.
+- **Inspect**: `ags status` shows the current Keyring identity and whether a restart is needed; `ags usage` shows each account's real quota as grouped progress bars, matching agy's `/usage` (`-compact` for a one-line table).
 
 ## Commands
 

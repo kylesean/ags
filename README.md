@@ -62,7 +62,7 @@ daemon 会把 Keyring 换成还有额度的号，但**不会重启 agy**。额�
   ```
 
   切完重启 `agy`（`/resume` 恢复会话）。
-- **查状态**：`ags status` 看当前 Keyring 身份与是否需重启；`ags usage` 看各号真实额度。
+- **查状态**：`ags status` 看当前 Keyring 身份与是否需重启；`ags usage` 看各号真实额度（分组进度条，样式对齐 agy 的 `/usage`；`-compact` 出单行表格）。
 
 ## 命令
 

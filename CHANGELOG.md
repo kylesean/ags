@@ -6,6 +6,11 @@
 ## [Unreleased]
 
 ### Changed
+- **`ags usage` 重做输出**：按额度组渲染进度条，样式对齐 agy 原生 `/usage` ——
+  组名全大写、`Models within this group:` 描述、`[████░░░░] 47.44%` 条形，
+  以及 `Quota available` / `Refreshes in 26h 12m` 状态行。组顺序固定为
+  GEMINI → 3p → Argon（旧版是 Go map 顺序，每次都可能不同）。
+  `-compact` 保留原来的单行表格给脚本用。
 - **429 重试覆盖整个账号池**：原来写死 `attempt >= 1`，每个请求只试一个号；
   现在按池大小重试（`proxy.CandidateCounter`），单号池自然退化为不重试。
 
@@ -21,6 +26,7 @@
   （`ClearQuotaCooldown`）；429 来源的短避让保持不动。
 - **UA 过期自检**：启动拉完模型表后检查是否缺少新代际模型（`gemini-4-argon*`），
   缺了就告警 —— 因为 UA 过期是静默降级，不报错但少给模型与额度组。
+- **`ags usage` 失败时错误被打印两遍**：改为逐账号打印 + 末尾一句摘要。
 - **`TestFormatCooldown` 在 23:59 附近偶发失败**：测试用「现在 + 90 秒」，
   跨天时断言必挂。改为锚定本地正午。
 
