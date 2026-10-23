@@ -194,6 +194,11 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
 			}
+			// UA 过期是静默降级：接口 200 但少给模型与额度组。
+			// 主动判定一次，别等用户发现「额度不刷新了」。
+			if warn := uaCapabilityWarning(models); warn != "" {
+				lg.Printf("警告: %s", warn)
+			}
 		}
 	}
 	lg.Printf("监听 %s → %s", *listen, srv.Upstream())
@@ -305,6 +310,9 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 			if models.DefaultAgentModelID != "" {
 				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
 			}
+			if warn := uaCapabilityWarning(models); warn != "" {
+				lg.Printf("警告: %s", warn)
+			}
 			return
 		}
 	}
@@ -322,6 +330,15 @@ type selectorPicker struct {
 	lastName      string
 	inFlight      int
 	pendingSwitch *accountSwitch
+}
+
+// CandidateCount 实现 proxy.CandidateCounter：告诉网关这个池有几个号。
+// 网关据此决定 429 最多换几次号 —— 池里有 3 个号就该试 3 次。
+func (p *selectorPicker) CandidateCount() int {
+	if p == nil || p.sel == nil {
+		return 0
+	}
+	return p.sel.CandidateCount()
 }
 
 func (p *selectorPicker) beginRequest() {

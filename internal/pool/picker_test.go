@@ -382,8 +382,14 @@ func TestFormatCooldown(t *testing.T) {
 		t.Errorf("零值 = %q，want -", got)
 	}
 
+	// 把「今天」锚在一个不会跨天的位置：用本地正午 + 90 秒，
+	// 避免测试恰好在 23:59 跑时 now+90s 落到次日（跨天断言会误判）。
 	now := time.Now()
-	sameDay := now.Add(90 * time.Second)
+	noon := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, now.Location())
+	sameDay := noon.Add(90 * time.Second)
+	if sameDay.Day() != noon.Day() {
+		t.Fatalf("测试自身跨天了: %v", sameDay)
+	}
 	want := sameDay.Local().Format("15:04:05")
 	if got := FormatCooldown(sameDay); got != want {
 		t.Errorf("同日 = %q，want %q", got, want)

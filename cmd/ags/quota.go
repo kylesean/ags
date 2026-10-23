@@ -56,6 +56,58 @@ func jitteredInterval(base time.Duration) time.Duration {
 	return base + time.Duration(d)
 }
 
+// recoveryPollFloor 是全池冷却时的轮询下限。
+//
+// 为什么不设成 0：那会退化成热循环，几分钟内把额度接口刷爆，
+// 反而可能被上游限流。30 秒足够「恢复后很快察觉」，又不至于过分。
+const recoveryPollFloor = 30 * time.Second
+
+// nextQuotaInterval 决定下一轮额度轮询的等待时间。
+//
+// 常规情况按 base（默认 3 分钟）走。但如果整个池都在冷却，说明
+// 现在这个状态是**暂时**的，恢复时刻就是翻盘点：这时按 base 等
+// 最多要白等 3 分钟，期间的请求全部撞 503。压到 floor 能显著缩短
+// 这段空窗。
+//
+// 冷却很久（周窗口耗尽、要等一周）时不做这个压缩：那种情况下
+// 30 秒一次的探测纯属浪费，按常规节奏走即可。
+func nextQuotaInterval(sel *pool.Selector, base time.Duration, now time.Time) time.Duration {
+	if base <= 0 || sel == nil {
+		return base
+	}
+
+	earliest := time.Time{}
+	allCooling := true
+	n := 0
+	for _, a := range sel.Candidates() {
+		if a == nil {
+			continue
+		}
+		n++
+		if a.CooldownUntil.IsZero() || !now.Before(a.CooldownUntil) {
+			allCooling = false
+			break
+		}
+		if earliest.IsZero() || a.CooldownUntil.Before(earliest) {
+			earliest = a.CooldownUntil
+		}
+	}
+	if n == 0 || !allCooling || earliest.IsZero() {
+		return base
+	}
+
+	// 只在「恢复时刻近到能被 floor 覆盖」时才压缩。
+	// 留 resetGrace 的余量：上游落账有延迟，早到一点点照样 429。
+	remaining := earliest.Sub(now) + time.Minute
+	if remaining <= 0 || remaining > base {
+		return base
+	}
+	if remaining < recoveryPollFloor {
+		return recoveryPollFloor
+	}
+	return remaining
+}
+
 // triggerAccount 异步触发单号即时额度检测（非阻塞，只留最新）。
 // 429 当事号只查自己，把突发流量从 N 次降到 1 次。
 func (q *quotaWatcher) triggerAccount(name string) {
@@ -113,13 +165,16 @@ func (q *quotaWatcher) probe(ctx context.Context, a *pool.Account, now time.Time
 	q.sel.SetQuotaState(a.Name, exhausted)
 
 	if exhausted {
-		q.sel.SetCooldownMax(a.Name, until)
+		q.sel.SetCooldownMaxCause(a.Name, until, pool.CooldownQuota)
 		if changed {
 			q.log.Printf("额度耗尽 %s: %s → 冷却至 %s",
 				a.Name, g.Describe(), pool.FormatCooldown(until))
 		}
 		return
 	}
+	// 额度确认可用：额度来源的冷却（可能远在 resetTime）立刻解除，
+	// 但 429 避让保持不动。
+	q.sel.ClearQuotaCooldown(a.Name)
 	q.sel.ClearExpiredCooldown(a.Name, now)
 	if changed {
 		q.log.Printf("额度 %s: %s", a.Name, g.Describe())
@@ -127,11 +182,14 @@ func (q *quotaWatcher) probe(ctx context.Context, a *pool.Account, now time.Time
 }
 
 // run 按 interval 循环 check（每轮叠加抖动），ctx 取消即退。首轮由调用方同步执行。
+//
+// 间隔每轮重新计算（nextQuotaInterval）：全池冷却时缩短，恢复后自动回到常规节奏。
 func (q *quotaWatcher) run(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
 	for {
+		delay := nextQuotaInterval(q.sel, interval, time.Now())
 		select {
 		case <-ctx.Done():
 			return
@@ -141,7 +199,7 @@ func (q *quotaWatcher) run(ctx context.Context, interval time.Duration) {
 			} else {
 				q.checkOne(ctx, name)
 			}
-		case <-time.After(jitteredInterval(interval)):
+		case <-time.After(jitteredInterval(delay)):
 			q.check(ctx, false)
 		}
 	}

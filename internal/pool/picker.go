@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,10 +20,10 @@ type Refresher func(ctx context.Context, a *Account) error
 // 采用账号级别的细粒度互斥锁同步续期状态，避免刷新风暴，返回调用方快照副本。
 // 当某个账号设置了 CooldownUntil 时，Pick 会自动跳过并顺延到下一可用账号。
 type Selector struct {
-	mu       sync.Mutex
-	cands    []*Account
-	refresh  Refresher
-	skew     time.Duration
+	mu         sync.Mutex
+	cands      []*Account
+	refresh    Refresher
+	skew       time.Duration
 	now        func() time.Time
 	lastErrs   error
 	activeName string
@@ -54,6 +55,21 @@ func (s *Selector) accountLock(name string) *sync.Mutex {
 		s.locks[name] = l
 	}
 	return l
+}
+
+// CandidateCount 返回候选账号数量，供网关决定 429 最多换几次号。
+//
+// 只数「有名字的」非空候选：空槽位不能真的拿来发请求。
+func (s *Selector) CandidateCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, a := range s.cands {
+		if a != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // Candidates 返回候选账号的快照副本，仅供状态展示。
@@ -144,6 +160,44 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 	return &cp, nil
 }
 
+// AllCoolingError 表示池里每个账号都在冷却，但只是暂时的。
+//
+// 和「池空」「token 全废」必须分开：那种情况等多久都没用，必须让用户
+// 去处理；而全池冷却只要等到 Until 就能自然恢复。上层据此决定是
+// 回 503 + Retry-After（客户端稍后重试），还是报错让人介入。
+//
+// Until 取所有账号里**最早**的解冻时刻 —— 我们要的是「最快什么时候
+// 能恢复服务」，不是「最后一个什么时候恢复」。
+type AllCoolingError struct {
+	Until time.Time
+	// Names 是处于冷却的账号名，用于日志展示。
+	Names []string
+}
+
+func (e *AllCoolingError) Error() string {
+	if e == nil {
+		return "全部账号冷却中"
+	}
+	names := strings.Join(e.Names, ", ")
+	if names != "" {
+		return fmt.Sprintf("全部 %d 个账号冷却中（%s），最早 %s 恢复",
+			len(e.Names), names, FormatCooldown(e.Until))
+	}
+	return fmt.Sprintf("全部账号冷却中，最早 %s 恢复", FormatCooldown(e.Until))
+}
+
+// RetryAfter 返回建议的重试等待时长（用于 HTTP Retry-After）。
+// 已经过期（或 Until 为零）时返回 0，调用方不设该头。
+func (e *AllCoolingError) RetryAfter(now time.Time) time.Duration {
+	if e == nil || e.Until.IsZero() {
+		return 0
+	}
+	if d := e.Until.Sub(now); d > 0 {
+		return d
+	}
+	return 0
+}
+
 // Pick 挑选可用账号快照。具备活跃账号粘性（Active Account Affinity），
 // 账号需要续期时在账号粒度进行并发同步，不阻塞全局锁。
 func (s *Selector) Pick(ctx context.Context) (*Account, error) {
@@ -152,6 +206,26 @@ func (s *Selector) Pick(ctx context.Context) (*Account, error) {
 
 	now := s.now()
 	var errs []error
+	// allCooling 记录「所有失败都是冷却」这一事实，并找出最早解冻时刻。
+	// 只要出现一个非冷却的失败（token 废了、没 refresh_token），就说明
+	// 光等没用，必须让用户介入。
+	allCooling := true
+	var earliest time.Time
+	var coolingNames []string
+	usable := 0
+
+	note := func(a *Account, err error) {
+		errs = append(errs, err)
+		usable++
+		if a == nil || !cooling(a, now) {
+			allCooling = false
+			return
+		}
+		coolingNames = append(coolingNames, a.Name)
+		if earliest.IsZero() || a.CooldownUntil.Before(earliest) {
+			earliest = a.CooldownUntil
+		}
+	}
 
 	// 1. 活跃账号粘性：优先沿用当前健康的活跃账号，避免旧账号解冻时反抢导致频繁切号
 	if s.activeName != "" {
@@ -168,7 +242,7 @@ func (s *Selector) Pick(ctx context.Context) (*Account, error) {
 				s.lastErrs = nil
 				return cp, nil
 			}
-			errs = append(errs, err)
+			note(active, err)
 		}
 	}
 
@@ -183,16 +257,18 @@ func (s *Selector) Pick(ctx context.Context) (*Account, error) {
 			s.lastErrs = nil
 			return cp, nil
 		}
-		errs = append(errs, err)
+		note(a, err)
 	}
 
 	s.lastErrs = errors.Join(errs...)
-	if len(errs) == 0 {
+	if usable == 0 {
 		return nil, errors.New("账号池为空（先用 ags add <name> 捕获一个）")
+	}
+	if allCooling && len(coolingNames) > 0 {
+		return nil, &AllCoolingError{Until: earliest, Names: coolingNames}
 	}
 	return nil, fmt.Errorf("没有可用账号: %w", s.lastErrs)
 }
-
 
 // CooldownOf 返回账号当前的冷却截止时刻，账号不存在返回零值。只读，供日志展示。
 func (s *Selector) CooldownOf(name string) time.Time {
@@ -208,7 +284,15 @@ func (s *Selector) CooldownOf(name string) time.Time {
 
 // SetCooldown 设置账号冷却截止时刻。处于冷却期的账号在 Pick 时会被自动跳过。
 // until 为零值或过去时间表示解除冷却。
+//
+// 调用方必须自己说明来源（通过 SetCooldownCause），否则一律视为 429 避让 ——
+// 保守假设：宁可多等，也不要让额度轮询洗掉一个真实的限流避让。
 func (s *Selector) SetCooldown(name string, until time.Time) {
+	s.SetCooldownCause(name, until, Cooldown429)
+}
+
+// SetCooldownCause 设置冷却并记录来源。
+func (s *Selector) SetCooldownCause(name string, until time.Time, cause CooldownCause) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range s.cands {
@@ -216,12 +300,37 @@ func (s *Selector) SetCooldown(name string, until time.Time) {
 			continue
 		}
 		a.CooldownUntil = until
+		if until.IsZero() {
+			a.CooldownCause = CooldownNone
+		} else {
+			a.CooldownCause = cause
+		}
 		return
 	}
 }
 
+// CooldownCauseOf 返回账号当前冷却的来源，无冷却返回 CooldownNone。
+func (s *Selector) CooldownCauseOf(name string) CooldownCause {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.cands {
+		if a != nil && a.Name == name {
+			if a.CooldownUntil.IsZero() {
+				return CooldownNone
+			}
+			return a.CooldownCause
+		}
+	}
+	return CooldownNone
+}
+
 // SetCooldownMax 仅当 until 晚于现有冷却时才更新，避免缩短 429 等路径打上的更长避让。
 func (s *Selector) SetCooldownMax(name string, until time.Time) {
+	s.SetCooldownMaxCause(name, until, CooldownQuota)
+}
+
+// SetCooldownMaxCause 是 SetCooldownMax 的带来源版本。
+func (s *Selector) SetCooldownMaxCause(name string, until time.Time, cause CooldownCause) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range s.cands {
@@ -230,6 +339,7 @@ func (s *Selector) SetCooldownMax(name string, until time.Time) {
 		}
 		if until.After(a.CooldownUntil) {
 			a.CooldownUntil = until
+			a.CooldownCause = cause
 		}
 		return
 	}
@@ -246,10 +356,34 @@ func (s *Selector) ClearExpiredCooldown(name string, now time.Time) {
 		}
 		if a.CooldownUntil.IsZero() || !now.Before(a.CooldownUntil) {
 			a.CooldownUntil = time.Time{}
+			a.CooldownCause = CooldownNone
 		}
 		return
 	}
 }
+
+// ClearQuotaCooldown 清掉**额度来源**的冷却，即便它还没到期。
+//
+// 为什么需要它：周窗口耗尽会把账号冻结到 resetTime，那可能是一周后。
+// 一旦额度轮询确认「其实还有额度」（上游提前补量、或当初误判），
+// 再让账号干等一周就完全说不通了。
+//
+// 429 来源的冷却不受影响 —— 那条路径必须在测试里钉死。
+func (s *Selector) ClearQuotaCooldown(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.cands {
+		if a == nil || a.Name != name {
+			continue
+		}
+		if a.CooldownCause == CooldownQuota {
+			a.CooldownUntil = time.Time{}
+			a.CooldownCause = CooldownNone
+		}
+		return
+	}
+}
+
 // SetQuotaState 记录账号的额度耗尽标记（内存状态）。
 func (s *Selector) SetQuotaState(name string, exhausted bool) {
 	s.mu.Lock()

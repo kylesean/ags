@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/kylesean/ags/internal/pool"
 )
 
 // Account 是转发时要用的最小账号视图。
@@ -37,6 +40,14 @@ type Picker interface {
 // StatusReporter 是 Picker 的可选扩展接口，用于接收上游 HTTP 状态码反馈。
 type StatusReporter interface {
 	ReportStatus(name string, statusCode int)
+}
+
+// CandidateCounter 是 Picker 的可选扩展接口，报告池里有多少候选账号。
+//
+// 429 重试要靠它决定「最多换几次号」：池里有 5 个号就该试 5 次，
+// 而不是写死试 1 次。问不到时由调用方退回保守上限。
+type CandidateCounter interface {
+	CandidateCount() int
 }
 
 type staticPicker struct{ a *Account }
@@ -656,14 +667,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for attempt := 0; ; attempt++ {
+	// 429 重试次数：池里有几个号就用几次。
+	// 旧实现写死 attempt >= 1，等于每个请求只试一个号，
+	// 多号池在 5h 窗口同时见底时形同虚设。
+	// 单号池 CandidateCount()==1，自然退化成「不重试」。
+	maxAttempts := s.pickAttempts()
+	attempts := 0
+
+	for {
 		a, err := s.picker.Pick(r.Context())
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			s.writePickError(w, err)
 			return
 		}
+		attempts++
+
 		ctx := context.WithValue(r.Context(), ctxAccount{}, a)
 
 		req := r.Clone(ctx)
@@ -683,7 +701,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		rw := newRetryResponseWriter(w)
 		s.rp.ServeHTTP(rw, req)
-		if rw.status != http.StatusTooManyRequests || attempt >= 1 {
+		if rw.status != http.StatusTooManyRequests || attempts >= maxAttempts {
 			if rw.status == http.StatusTooManyRequests {
 				rw.header.Set("Content-Length", strconv.Itoa(rw.body.Len()))
 				rw.flushHeaders()
@@ -694,5 +712,60 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.log.Printf("上游 429，账号 %s 冷却，重试下一个账号", a.Name)
+		// 试完所有候选仍是 429：把最后一次的 429 如实交给客户端。
+		if attempts >= maxAttempts {
+			rw.header.Set("Content-Length", strconv.Itoa(rw.body.Len()))
+			rw.flushHeaders()
+			w.WriteHeader(rw.status)
+			_, _ = w.Write(rw.body.Bytes())
+			return
+		}
 	}
+}
+
+// pickAttempts 决定 429 最多换几次号。
+//
+// 优先问 Picker 池子里有几个候选（pool.Selector 实现了 CandidateCounter）；
+// 问不到时退回一个保守上限。上限存在的意义是防止 picker 每次都返回
+// 不同名字时无限重试。
+func (s *Server) pickAttempts() int {
+	const fallback = 3
+	if c, ok := s.picker.(CandidateCounter); ok {
+		if n := c.CandidateCount(); n > 0 {
+			return n
+		}
+	}
+	return fallback
+}
+
+// writePickError 把选号失败翻译成客户端能理解的状态码。
+//
+// 全池冷却是**暂时**的：告诉客户端等多久（Retry-After），别让它
+// 立刻重试把日志刷爆。其它失败（池空、token 全废）等多久都没用，
+// 只回 503，让用户去处理。
+func (s *Server) writePickError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var cooling *pool.AllCoolingError
+	if errors.As(err, &cooling) {
+		now := time.Now()
+		if d := cooling.RetryAfter(now); d > 0 {
+			// 向上取整：Retry-After 是秒粒度，向下取整会让客户端
+			// 早到一点点、又撞上冷却。
+			secs := int((d + time.Second - 1) / time.Second)
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+		}
+		s.log.Printf("全部账号冷却中：%v", err)
+	} else {
+		s.log.Printf("选号失败：%v", err)
+	}
+
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{
+			"code":    http.StatusServiceUnavailable,
+			"message": err.Error(),
+			"type":    "ags_no_account",
+		},
+	})
 }

@@ -41,9 +41,40 @@ type Account struct {
 	QuotaExhausted bool      `json:"-"`
 	CooldownUntil  time.Time `json:"-"`
 	LastQuotaCheck time.Time `json:"-"`
+	// CooldownCause 记录冷却来源，决定谁有权清掉它：
+	//
+	//	CooldownQuota 由额度耗尽打上，resetTime 可能在一周后；
+	//	              但额度一旦确认恢复（比如上游提前补了），就该立刻解冻，
+	//	              否则账号要白等到 resetTime。
+	//	Cooldown429   由上游 429/401 打上的短避让；额度轮询绝不能洗掉它，
+	//	              那是「别马上再撞一次限流」的保险。
+	CooldownCause CooldownCause `json:"-"`
 	// KeyringFallback 标记该对象是池空时由系统 Keyring 回落的内存伪账号，
 	// 而非磁盘文件。绝不持久化；刷新不落盘、tui 不同步回写（本就来自 keyring）。
 	KeyringFallback bool `json:"-"`
+}
+
+// CooldownCause 标明冷却的来源，见 Account.CooldownCause。
+type CooldownCause int
+
+const (
+	// CooldownNone 表示当前没有冷却（或来源未知的旧值）。
+	CooldownNone CooldownCause = iota
+	// CooldownQuota 由额度耗尽打上，额度恢复即可清。
+	CooldownQuota
+	// Cooldown429 由上游 429/401 打上，只能等它自己过期。
+	Cooldown429
+)
+
+func (c CooldownCause) String() string {
+	switch c {
+	case CooldownQuota:
+		return "quota"
+	case Cooldown429:
+		return "429"
+	default:
+		return "none"
+	}
 }
 
 // legacyPoolDir 是改名前的数据目录，迁移用一次即弃。

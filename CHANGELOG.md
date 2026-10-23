@@ -5,6 +5,27 @@
 
 ## [Unreleased]
 
+### Changed
+- **429 重试覆盖整个账号池**：原来写死 `attempt >= 1`，每个请求只试一个号；
+  现在按池大小重试（`proxy.CandidateCounter`），单号池自然退化为不重试。
+
+### Fixed
+- **全池冷却时的 503 缺 `Retry-After`**：新增 `pool.AllCoolingError`，
+  把「暂时都在冷却」与「池空 / token 全废」分开 —— 前者带 `Retry-After`
+  告知等多久，后者不带（等下去也不会好）。旧实现两者都是裸 503。
+- **全池冷却时轮询不加速**：`nextQuotaInterval` 在整池冷却且恢复时刻临近时
+  把间隔压到 30 秒下限（`recoveryPollFloor`），恢复后自动回到常规节奏；
+  冷却是「一周后才恢复」时不加速，避免无意义刷接口。
+- **额度恢复后账号仍被冻结到 resetTime**：新增 `Account.CooldownCause`
+  区分冷却来源。额度来源的冷却（可能远在一周后）在额度确认恢复时立刻解除
+  （`ClearQuotaCooldown`）；429 来源的短避让保持不动。
+- **UA 过期自检**：启动拉完模型表后检查是否缺少新代际模型（`gemini-4-argon*`），
+  缺了就告警 —— 因为 UA 过期是静默降级，不报错但少给模型与额度组。
+- **`TestFormatCooldown` 在 23:59 附近偶发失败**：测试用「现在 + 90 秒」，
+  跨天时断言必挂。改为锚定本地正午。
+
+## [v0.7.0] - 2026-10-23
+
 ### Fixed
 - **上游 User-Agent 代际（agy ≥1.2.8 起）**：`antigravity-cli/1.2.9` 已被上游**静默降级** —— `fetchAvailableModels` 只回 23 个模型（缺 Gemini 4 Argon），`retrieveUserQuotaSummary` 干脆不返回 `Gemini Models` 组。表现是 `ags usage`/`serve` 永远显示「未找到 GEMINI 组」，自动切号完全失效，且没有任何报错。现改为 `antigravity/cli/<本机 agy 版本> (aidev_client; os_type=…; arch=…)`，版本在启动时从 `agy --version` 读取。
 - **模型发现（agy ≥1.4）**：agy 启动时先 `GET /v1beta/models?pageSize=1000`（后跟 `/v1/models`）问网关要模型表。serve 原先把这个请求透传给上游，得到 Google 的 HTML 404，agy 于是退回内置目录并发 `gemini-3.1-pro-preview` 这类已下线的名字 —— 用户看到的是「一提问就 404 NOT_FOUND」。网关现自行回答这两种发现请求。
