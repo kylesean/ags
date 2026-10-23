@@ -120,7 +120,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	}
 
 	sel := pool.NewSelector(cands, refreshAccount)
-	qw := newQuotaWatcher(sel, DefaultUpstream, defaultUserAgent, *threshold, lg)
+	qw := newQuotaWatcher(sel, DefaultUpstream, upstreamUserAgent(ctx), *threshold, lg)
 
 	qw.check(ctx, true)
 	if _, err := daemonSyncOnce(ctx, sel, lg); err != nil {

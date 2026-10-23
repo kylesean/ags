@@ -294,8 +294,8 @@ func TestEnvelopeEndToEndThroughProxy(t *testing.T) {
 	}
 
 	// 2) 许可证闸门：UA 必须被盖掉，不能沿用 agy 的 Go 默认 UA
-	if gotUA != "antigravity-cli/1.2.9" {
-		t.Errorf("上游收到 User-Agent = %q, 想要 antigravity-cli/1.2.9（否则 403）", gotUA)
+	if gotUA != DefaultUpstreamUserAgent() {
+		t.Errorf("上游收到 User-Agent = %q, 想要 %q（否则 403）", gotUA, DefaultUpstreamUserAgent())
 	}
 	if gotAuth != "Bearer TOK" {
 		t.Errorf("上游收到 Authorization = %q, 想要 Bearer TOK", gotAuth)
@@ -423,14 +423,14 @@ func TestUserAgentIsOverriddenNotJustSet(t *testing.T) {
 	req.Header.Set("User-Agent", "Go-http-client/1.1")
 	s.ServeHTTP(httptest.NewRecorder(), req)
 
-	if len(gotUA) != 1 || gotUA[0] != "antigravity-cli/1.2.9" {
-		t.Errorf("上游收到 UA = %v, 想要 [antigravity-cli/1.2.9]", gotUA)
+	if len(gotUA) != 1 || gotUA[0] != DefaultUpstreamUserAgent() {
+		t.Errorf("上游收到 UA = %v, 想要 [%s]", gotUA, DefaultUpstreamUserAgent())
 	}
 }
 
 func TestSetUserAgentOverridesDefault(t *testing.T) {
 	s := newTestServer(t, "http://127.0.0.1:1", Static(&Account{AccessToken: "T"}))
-	if s.UserAgentForUpstream() != "antigravity-cli/1.2.9" {
+	if s.UserAgentForUpstream() != DefaultUpstreamUserAgent() {
 		t.Errorf("默认 UA = %q", s.UserAgentForUpstream())
 	}
 	s.SetUserAgent("custom/1.0")

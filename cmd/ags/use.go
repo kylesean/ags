@@ -52,7 +52,7 @@ func cmdUse(args []string) error {
 		}
 	}
 
-	sum, err := quota.Fetch(ctx, *upstream, a.AccessToken, defaultUserAgent)
+	sum, err := quota.Fetch(ctx, *upstream, a.AccessToken, upstreamUserAgent(ctx))
 	if err != nil {
 		return fmt.Errorf("查询 %s 额度失败: %w", name, err)
 	}

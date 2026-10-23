@@ -13,11 +13,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 )
 
-// upstreamUserAgent 是访问上游 CloudCode 必须携带的客户端标识。
-const upstreamUserAgent = "antigravity-cli/1.2.9"
+// upstreamUserAgent 是访问上游 CloudCode 必须携带的客户端标识（许可证闸门）。
+//
+// 格式与约束都是实测的（2026-10-23）：
+//
+//	antigravity/cli/1.4.6 (aidev_client; os_type=linux; arch=amd64)
+//
+// 上游按这个头决定「你算哪一代客户端」，进而决定返回哪些模型与哪些额度组。
+// 旧格式 antigravity-cli/1.2.9 仍然能用，但会被静默降级：模型表里没有
+// Gemini 4 Argon，额度汇总里干脆没有 "Gemini Models" 组 —— ags 于是永远
+// 显示「未找到 GEMINI 组」，自动切号失效。没有任何报错，这是最难查的一种。
+//
+// 所以这里必须跟着 agy 的版本走，见 DefaultUpstreamUserAgent。
+const upstreamUserAgentPrefix = "antigravity/cli/"
+
+// defaultUpstreamVersion 是内置兜底版本。取一个确认可用的值，
+// 而不是 "0"：版本号过旧会重新掉回被降级的那一档。
+const defaultUpstreamVersion = "1.4.6"
+
+// UpstreamUserAgent 拼出当前格式的上游 UA。
+//
+// version 传 agy 的真实版本（见 cmd/ags 的 detectAgyVersion）；空则用兜底值。
+// os/arch 用 GOOS/GOARCH，跟 agy 自报的写法一致。
+func UpstreamUserAgent(goos, goarch, version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = defaultUpstreamVersion
+	}
+	if goos == "" {
+		goos = "linux"
+	}
+	if goarch == "" {
+		goarch = "amd64"
+	}
+	return upstreamUserAgentPrefix + version +
+		" (aidev_client; os_type=" + goos + "; arch=" + goarch + ")"
+}
+
+// DefaultUpstreamUserAgent 是 serve/daemon 在没拿到 agy 版本时的默认值。
+func DefaultUpstreamUserAgent() string {
+	return UpstreamUserAgent(runtime.GOOS, runtime.GOARCH, "")
+}
 
 // geminiPathPrefix 是 agy 网关模式发来的生成请求路径前缀。
 const geminiPathPrefix = "/v1beta/models/"

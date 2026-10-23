@@ -44,6 +44,8 @@ func cmdUsage(args []string) error {
 	if err != nil {
 		return err
 	}
+	// 额度组同样受 UA 版本影响：旧版本只回 3p 组，看起来像「没有 GEMINI 组」。
+	ua := upstreamUserAgent(context.Background())
 	fmt.Println("账号\t邮箱\t额度")
 	var wg sync.WaitGroup
 	results := make([]string, len(accounts))
@@ -65,7 +67,7 @@ func cmdUsage(args []string) error {
 					return
 				}
 			}
-			sum, err := quota.Fetch(accountCtx, *upstream, acc.AccessToken, defaultUserAgent)
+			sum, err := quota.Fetch(accountCtx, *upstream, acc.AccessToken, ua)
 			if err != nil {
 				results[idx] = formatUsageError(acc, err)
 				errs[idx] = err

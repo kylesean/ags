@@ -40,8 +40,12 @@ func (s *stringList) Set(v string) error {
 // 方法路径为 v1internal:streamGenerateContent，顶层协议为 {model, request}。
 const DefaultUpstream = "https://daily-cloudcode-pa.googleapis.com"
 
-// defaultUserAgent 是上游服务要求的客户端标识头，用于通行认证闸门。
-const defaultUserAgent = "antigravity-cli/1.2.9"
+// defaultUserAgent 是发给上游的客户端标识（许可证闸门），已带本机 agy 版本。
+//
+// 别写死版本号：上游按 UA 版本决定给哪一批模型与哪几个额度组，
+// 版本写死会让 agy 升级后静默降级（见 internal/proxy.UpstreamUserAgent）。
+// 运行期取值见 upstreamUserAgent(ctx)；这里是包级默认值，供 flag 默认值使用。
+var defaultUserAgent = proxy.DefaultUpstreamUserAgent()
 
 // DefaultQuotaInterval 是额度轮询默认间隔。5 小时窗口下额度变化缓慢，
 // 突发切换由 429 即时触发兜底，常规轮询 3 分钟足够；实际等待叠加 ±25% 抖动。
@@ -130,6 +134,12 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 		} else {
 			lg.Printf("已强制刷新全部账号")
 		}
+	}
+
+	// UA 决定上游给哪一批模型与额度组，必须带本机 agy 的真实版本；
+	// 用户在命令行显式指定时以用户为准。
+	if *ua == defaultUserAgent {
+		*ua = upstreamUserAgent(ctx)
 	}
 
 	srv, err := proxy.New(*upstream, adapter, lg)

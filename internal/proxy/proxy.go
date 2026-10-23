@@ -220,7 +220,7 @@ func (s *Server) UserAgentForUpstream() string {
 	if s.userAgent != "" {
 		return s.userAgent
 	}
-	return upstreamUserAgent
+	return DefaultUpstreamUserAgent()
 }
 
 // Upstream 返回上游地址，便于状态展示。
