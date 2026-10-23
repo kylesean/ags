@@ -41,7 +41,7 @@ archives:
           - zip
     files:
       - README.md
-      - README_zh.md
+      - README.en.md
       - LICENSE
       - CHANGELOG.md
 

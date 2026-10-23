@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### Changed
+- **README 去掉冗余的 `README_zh.md`**：它停留在 v0.6.0、落后 17 个 commit，
+  却仍被打进发布包 —— 结果包里同时有两份互相矛盾的中文说明。
+  现在只保留 `README.md`（中文，GitHub 默认展示）与 `README.en.md`（英文），
+  发布包同步改为携带这两份。
+
+### Docs
+- **README 补充「两种方式怎么选」**：之前只写了能不能自动重启，没写体验代价。
+  现在明确：方式一（`ags` 托管）下 agy 会显示 "Enterprise Gateway"、
+  看不到邮箱、原生 `/usage` 被接管 —— 这是 agy 对企业网关模式的既定行为，
+  并给出「在意原生界面用方式二，在意免手动重启用方式一」的取舍建议。
+- **README 单列「查额度」章节**：`ags usage` 现在是分组进度条，值得单独说明，
+  附带 `-compact` 给脚本用。
+- **命令表补充适用场景**：`ags login` 标注「新号首选」、`ags add` 标注
+  「已在 agy 登录过时用」，并补上遗漏的 `ags probe`。
+
 ### Added
 - **终端多语言（中/英/日）**：新增 `internal/i18n`。语言按 POSIX 优先级探测 ——
   `-lang` 参数 > `AGS_LANG` > `LC_ALL` > `LC_MESSAGES` > `LANG` > 系统区域设置

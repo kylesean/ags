@@ -64,6 +64,18 @@ agy
 
 The daemon rewrites the Keyring to an account that still has quota, but it does **not** restart agy. When quota runs out, the AI reply shows an error; confirm the switch line in terminal A (or run `ags status`), restart `agy` in terminal B, then `/resume`.
 
+### Which mode?
+
+| | Mode 1 `ags` | Mode 2 `ags daemon` |
+|---|---|---|
+| Restart agy after switching | **automatic** | manual |
+| agy UI | shows "Enterprise Gateway", no email | stock, identity visible |
+| Native `/usage` | taken over by the gateway | available |
+
+**Why Mode 1 hides the identity**: `ags` injects `AGY_LLM_GATEWAY_URL` into `agy`, which then assumes it is talking to an enterprise gateway and renders the identity as empty (it expects the gateway to supply it). That is agy's own behaviour for enterprise gateway mode and does not affect functionality — `ags` prints the active account at startup and `ags usage` still reports real quota.
+
+Pick Mode 2 for the stock UI, Mode 1 to avoid manual restarts.
+
 ## Switching accounts
 
 - **Automatic**: Mode 1 switches and restarts agy for you; Mode 2 syncs the Keyring only, so you restart agy yourself.
@@ -76,18 +88,29 @@ The daemon rewrites the Keyring to an account that still has quota, but it does 
   ```
 
   Restart `agy` after switching (`/resume` to restore a session).
-- **Inspect**: `ags status` shows the current Keyring identity and whether a restart is needed; `ags usage` shows each account's real quota as grouped progress bars, matching agy's `/usage` (`-compact` for a one-line table).
+- **Inspect**: `ags status` shows the current Keyring identity and whether a restart is needed.
+
+## Quota
+
+```sh
+ags usage            # grouped progress bars: 5h / weekly / Argon
+ags usage -compact   # one-line table, for scripts
+```
+
+Styled after agy's native `/usage`: group names, the `Models within this group:` line,
+`[████░░░░] 47.44%` bars, and `Quota available` / `Refreshes in 26h 12m`.
 
 ## Commands
 
 | Command       | Description                                              |
 | ------------- | -------------------------------------------------------- |
-| `ags login`  | Standalone OAuth login into the pool (`login [-email m@g] <name>`) |
-| `ags add`    | Import current system Keyring credentials into the pool  |
+| `ags login`  | Standalone OAuth login into the pool (**first choice for a new account**; `login [-email m@g] <name>`) |
+| `ags add`    | Import current Keyring credentials (use when already signed in via agy) |
 | `ags list` / `status` / `drop` / `usage` | List / inspect / remove / quota-check accounts |
 | `ags use B`  | Verify quota, then switch the Keyring to B (`--force` overrides) |
 | `ags daemon` | Foreground loop: poll quotas and sync the Keyring (restart agy yourself) |
-| `ags serve`  | Reverse proxy (one retry on 429, optional)               |
+| `ags serve`  | Start the reverse proxy only, without launching agy (advanced) |
+| `ags probe`  | Intercepting probe to inspect agy↔upstream wire format (debugging) |
 | `ags`        | Managed mode: start the Gateway, launch and auto-restart `agy` |
 
 ## Common options
