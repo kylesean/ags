@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed
+- **上游 User-Agent 代际（agy ≥1.2.8 起）**：`antigravity-cli/1.2.9` 已被上游**静默降级** —— `fetchAvailableModels` 只回 23 个模型（缺 Gemini 4 Argon），`retrieveUserQuotaSummary` 干脆不返回 `Gemini Models` 组。表现是 `ags usage`/`serve` 永远显示「未找到 GEMINI 组」，自动切号完全失效，且没有任何报错。现改为 `antigravity/cli/<本机 agy 版本> (aidev_client; os_type=…; arch=…)`，版本在启动时从 `agy --version` 读取。
+- **模型发现（agy ≥1.4）**：agy 启动时先 `GET /v1beta/models?pageSize=1000`（后跟 `/v1/models`）问网关要模型表。serve 原先把这个请求透传给上游，得到 Google 的 HTML 404，agy 于是退回内置目录并发 `gemini-3.1-pro-preview` 这类已下线的名字 —— 用户看到的是「一提问就 404 NOT_FOUND」。网关现自行回答这两种发现请求。
+- **努力档位模型（Gemini 4 Argon 一族）**：agy 1.4.6 会把选中的档位从模型名里摘掉、改走 `thinkingConfig`，实际发 `gemini-4-argon`（裸名），而上游只有 `gemini-4-argon-{low,medium,high}`。新增档位别名推导后，Argon 与 Claude 的 Low/Medium/High 都不再 404。
+- **额度分组 `Gemini 4 Argon`**：上游新增独立计量的 Argon 组（只有周窗口 `gemini-argon-wtu-weekly`）。旧的三级认组在模糊匹配时会把 Argon 组认成主 GEMINI 组；现在 Argon 单独成一路参与耗尽判定，主组槽位不被侵占。
+- **`Describe` 显示 Argon**：`ags usage` 与切号日志会多出一段 `Argon 周 xx.xx%`，便于解释「主组还有额度却切号」。
+
 ## [v0.6.0] - 2026-10-04
 
 ### Fixed
