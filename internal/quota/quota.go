@@ -8,6 +8,8 @@
 //	├─ displayName: "Gemini Models"
 //	│  ├─ gemini-5h      remainingFraction, resetTime
 //	│  └─ gemini-weekly  remainingFraction, resetTime
+//	├─ displayName: "Gemini 4 Argon"
+//	│  └─ gemini-argon-wtu-weekly   （只有周窗口，独立计量）
 //	└─ ... (其他模型组忽略)
 package quota
 
@@ -34,6 +36,10 @@ const (
 	geminiGroup        = "Gemini Models"
 	geminiBucket5h     = "gemini-5h"
 	geminiBucketWeekly = "gemini-weekly"
+
+	// Argon 是 2026-10 起独立计量的一组（默认 Agent 模型
+	// gemini-4-argon-medium 就在里面）。它只有周窗口，没有 5h。
+	geminiBucketArgonWeekly = "gemini-argon-wtu-weekly"
 )
 
 // maxBody 限制读入大小。实测额度汇总只有几 KB，留足余量。
@@ -97,34 +103,65 @@ type Summary struct {
 	Groups      []Group `json:"groups"`
 }
 
-// Gemini 是 GEMINI 组里我们关心的两个窗口。两者都可能为 nil。
+// Gemini 是我们要参与耗尽判定的额度窗口。三者都可能为 nil。
 type Gemini struct {
 	FiveHour *Bucket
 	Weekly   *Bucket
+	// Argon 是「Gemini 4 Argon」组的周窗口。默认 Agent 模型
+	// （gemini-4-argon-medium）只吃这一份额度，主组再满也不代表能用。
+	Argon *Bucket
 }
 
-// Gemini 从汇总里取出 GEMINI 组。找不到返回 nil。
+// Gemini 从汇总里取出主 GEMINI 组，并单独抓 Argon 周窗口。
+// 主组找不到返回 nil（只有 Argon 的账号仍会返回非 nil，见下）。
 //
-// 认组两步：先找含 bucketId gemini-5h 的组（键匹配，最硬）；
-// 没有再退回 displayName 含 "gemini" 的（兼容上游改组名）。
-// 两条都落空就返回 nil —— 宁可不冷却，也不能拿 3p 组的数字
-// 去判 GEMINI 额度。
+// 认组三步：先找含 bucketId gemini-5h 的组（键匹配，最硬）；
+// 再退回 displayName 精确等于 "Gemini Models" 的；
+// 最后才用 displayName 模糊含 "gemini" 的（兼容上游改组名）。
+// 模糊这步必须排除 Argon 组 —— 它的 displayName 同样含 "gemini"，
+// 而它只有周窗口，误认会把主组判成「只剩周额度」。
 func (s *Summary) Gemini() *Gemini {
 	if s == nil {
 		return nil
 	}
 	g := s.findGeminiGroup()
-	if g == nil {
-		return nil
+
+	out := &Gemini{}
+	if g != nil {
+		out.FiveHour = pickBucket(g, geminiBucket5h, "5h")
+		out.Weekly = pickBucket(g, geminiBucketWeekly, "weekly")
 	}
-	out := &Gemini{
-		FiveHour: pickBucket(g, geminiBucket5h, "5h"),
-		Weekly:   pickBucket(g, geminiBucketWeekly, "weekly"),
+	if ag := s.findArgonGroup(); ag != nil {
+		out.Argon = pickBucket(ag, geminiBucketArgonWeekly, "weekly")
 	}
-	if out.FiveHour == nil && out.Weekly == nil {
+
+	// 一个窗口都没找到才算「没有额度信息」。
+	// 只有 Argon 的账号（未授权 Gemini 3.x）也要参与判定：
+	// 它的默认模型正是 Argon。
+	if out.FiveHour == nil && out.Weekly == nil && out.Argon == nil {
 		return nil
 	}
 	return out
+}
+
+// findArgonGroup 找「Gemini 4 Argon」组：先按 bucketId，再按组名。
+func (s *Summary) findArgonGroup() *Group {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Groups {
+		for _, b := range s.Groups[i].Buckets {
+			if b.BucketID == geminiBucketArgonWeekly {
+				return &s.Groups[i]
+			}
+		}
+	}
+	for i := range s.Groups {
+		if strings.Contains(strings.ToLower(s.Groups[i].DisplayName), "argon") {
+			return &s.Groups[i]
+		}
+	}
+	return nil
 }
 
 // findGeminiGroup 按「bucketId 键匹配」→「displayName 精确」→「displayName 模糊含名」的顺序认组。
@@ -146,9 +183,15 @@ func (s *Summary) findGeminiGroup() *Group {
 	}
 	for i := range s.Groups {
 		g := &s.Groups[i]
-		if strings.Contains(strings.ToLower(g.DisplayName), "gemini") {
-			return g
+		name := strings.ToLower(g.DisplayName)
+		if !strings.Contains(name, "gemini") {
+			continue
 		}
+		// Argon 是独立计量的另一组，不能顶替主组。
+		if strings.Contains(name, "argon") {
+			continue
+		}
+		return g
 	}
 	return nil
 }
@@ -168,10 +211,13 @@ func pickBucket(g *Group, bucketID, window string) *Bucket {
 	return nil
 }
 
-// Exhausted 判断 GEMINI 额度是否已耗尽，并给出「该冷却到什么时候」。
+// Exhausted 判断额度是否已耗尽，并给出「该冷却到什么时候」。
 //
 // threshold 是耗尽判定线：remainingFraction <= threshold 就算耗尽。
 // 默认 0，即「归零才切号」，不浪费剩余的一点点额度。
+//
+// 参与判定的是主组 5h + 主组周 + Argon 周：三个窗口任意一个见底，
+// 默认模型就用不了，账号必须让位。
 //
 // 冷却时刻取所有耗尽窗口里**最晚**的 resetTime：
 // 5h 归零但周窗口还满 → 只等 22 分钟；周窗口也归零了 → 得等一周。
@@ -187,7 +233,7 @@ func (g *Gemini) Exhausted(threshold float64, now time.Time) (time.Time, bool) {
 	}
 	var until time.Time
 	hit := false
-	for _, b := range []*Bucket{g.FiveHour, g.Weekly} {
+	for _, b := range []*Bucket{g.FiveHour, g.Weekly, g.Argon} {
 		rem, ok := b.Remaining()
 		if !ok || rem > threshold {
 			continue // 字段缺失当未知，剩余量高于线就是没耗尽
@@ -208,11 +254,16 @@ func (g *Gemini) Exhausted(threshold float64, now time.Time) (time.Time, bool) {
 
 // Describe 生成给日志看的一行摘要，例如
 // 「5h 0.00% (重置 09-23 19:24), 周 99.99% (重置 09-30 15:52)」。
+// Argon 有额度窗口时追加一段，便于解释「主组还有额度却切号」。
 func (g *Gemini) Describe() string {
 	if g == nil {
 		return "未找到 GEMINI 组"
 	}
-	return fmt.Sprintf("5h %s, 周 %s", g.FiveHour.describe(), g.Weekly.describe())
+	s := fmt.Sprintf("5h %s, 周 %s", g.FiveHour.describe(), g.Weekly.describe())
+	if g.Argon != nil {
+		s += fmt.Sprintf(", Argon 周 %s", g.Argon.describe())
+	}
+	return s
 }
 
 func (b *Bucket) describe() string {
