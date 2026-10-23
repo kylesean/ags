@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kylesean/ags/internal/i18n"
 )
 
 const maxBody = 2 << 20 // 2 MiB 上限，防日志爆炸
@@ -44,9 +46,9 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 
 	ln, err := net.Listen("tcp", s.Listen)
 	if err != nil {
-		return fmt.Errorf("监听 %s 失败: %w", s.Listen, err)
+		return i18n.Errorf("probe.listenFail", s.Listen, err)
 	}
-	s.logger().Printf("探针已监听 %s（上游=%s）", s.Listen, orUnset(s.Upstream))
+	s.logger().Printf("%s", i18n.Trf("probe.listen", s.Listen, orUnset(s.Upstream)))
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
@@ -75,10 +77,10 @@ func (s *HTTPServer) handle(w http.ResponseWriter, r *http.Request) {
 
 	reqRec := FromRequest("request", r, body, s.Recorder.BodyMax())
 	if err := s.Recorder.Add(reqRec); err != nil {
-		s.logger().Printf("写记录失败: %v", err)
+		s.logger().Printf("%s", i18n.Trf("probe.writeFail", err))
 	}
-	s.logger().Printf("捕获 %s %s%s (%d bytes, proto=%s)",
-		r.Method, reqRec.Host, reqRec.Path, reqRec.BodyLen, r.Proto)
+	s.logger().Printf("%s",
+		i18n.Trf("probe.captured", r.Method, reqRec.Host, reqRec.Path, reqRec.BodyLen, r.Proto))
 
 	if s.Upstream == "" {
 		// 只记录模式：明确告诉 agy 这是探针，别让它误以为是真实错误。
@@ -108,7 +110,7 @@ func (s *HTTPServer) forward(w http.ResponseWriter, r *http.Request, body []byte
 			req.Host = up.Host
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
-			s.logger().Printf("转发失败 %s%s: %v", req.Host, req.URL.Path, err)
+			s.logger().Printf("%s", i18n.Trf("probe.forwardFail", req.Host, req.URL.Path, err))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]string{
@@ -134,7 +136,7 @@ func (s *HTTPServer) forward(w http.ResponseWriter, r *http.Request, body []byte
 		Note:   "forwarded",
 	}
 	_ = s.Recorder.Add(rec)
-	s.logger().Printf("转发 %s%s → %s [%d]", r.Method, r.URL.Path, up.Host, rw.status)
+	s.logger().Printf("%s", i18n.Trf("probe.forwarded", r.Method, r.URL.Path, up.Host, rw.status))
 }
 
 type statusRecorder struct {
@@ -156,7 +158,7 @@ func (r *statusRecorder) Flush() {
 
 func orUnset(s string) string {
 	if s == "" {
-		return "(unset, 记录不转发)"
+		return i18n.Tr("probe.unsetNoForward")
 	}
 	return s
 }
@@ -180,9 +182,9 @@ func (s *CONNECTServer) logger() *log.Logger {
 func (s *CONNECTServer) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.Listen)
 	if err != nil {
-		return fmt.Errorf("监听 %s 失败: %w", s.Listen, err)
+		return i18n.Errorf("probe.listenFail", s.Listen, err)
 	}
-	s.logger().Printf("CONNECT 探针已监听 %s", s.Listen)
+	s.logger().Printf("%s", i18n.Trf("probe.connectListen", s.Listen))
 
 	go func() {
 		<-ctx.Done()

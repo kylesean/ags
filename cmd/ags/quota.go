@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/kylesean/ags/internal/i18n"
 	"github.com/kylesean/ags/internal/pool"
 	"github.com/kylesean/ags/internal/quota"
 )
@@ -147,14 +148,14 @@ func (q *quotaWatcher) checkOne(ctx context.Context, name string) {
 func (q *quotaWatcher) probe(ctx context.Context, a *pool.Account, now time.Time, first bool) {
 	tok, err := q.sel.FreshToken(ctx, a.Name)
 	if err != nil {
-		q.log.Printf("查额度 %s 获取 token 失败（保持原状态）: %v", a.Name, err)
+		q.log.Printf("%s", i18n.Trf("serve.tokenFail", a.Name, err))
 		return
 	}
 	ck, cancel := context.WithTimeout(ctx, 15*time.Second)
 	sum, err := quota.Fetch(ck, q.upstream, tok, q.userAgent)
 	cancel()
 	if err != nil {
-		q.log.Printf("查额度 %s 失败（保持原状态）: %v", a.Name, err)
+		q.log.Printf("%s", i18n.Trf("serve.quotaFail", a.Name, err))
 		return
 	}
 
@@ -167,8 +168,8 @@ func (q *quotaWatcher) probe(ctx context.Context, a *pool.Account, now time.Time
 	if exhausted {
 		q.sel.SetCooldownMaxCause(a.Name, until, pool.CooldownQuota)
 		if changed {
-			q.log.Printf("额度耗尽 %s: %s → 冷却至 %s",
-				a.Name, g.Describe(), pool.FormatCooldown(until))
+			q.log.Printf("%s",
+				i18n.Trf("serve.quotaExhausted", a.Name, g.Describe(), pool.FormatCooldown(until)))
 		}
 		return
 	}
@@ -177,7 +178,7 @@ func (q *quotaWatcher) probe(ctx context.Context, a *pool.Account, now time.Time
 	q.sel.ClearQuotaCooldown(a.Name)
 	q.sel.ClearExpiredCooldown(a.Name, now)
 	if changed {
-		q.log.Printf("额度 %s: %s", a.Name, g.Describe())
+		q.log.Printf("%s", i18n.Trf("serve.quotaOk", a.Name, g.Describe()))
 	}
 }
 

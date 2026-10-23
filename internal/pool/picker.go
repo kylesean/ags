@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/kylesean/ags/internal/i18n"
 	"strings"
 	"sync"
 	"time"
@@ -102,7 +103,7 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 		return nil, errors.New("账号为空")
 	}
 	if cooling(a, now) {
-		return nil, fmt.Errorf("%s: 冷却至 %s", a.Name, FormatCooldown(a.CooldownUntil))
+		return nil, i18n.Errorf("picker.cooling", a.Name, FormatCooldown(a.CooldownUntil))
 	}
 
 	l := s.accountLock(a.Name)
@@ -128,7 +129,7 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 
 			// 重新加锁后再次检查冷却状态（可能在刷新期间被配额检测协程打上冷却）
 			if cooling(a, now) {
-				return nil, fmt.Errorf("%s: 冷却至 %s", a.Name, FormatCooldown(a.CooldownUntil))
+				return nil, i18n.Errorf("picker.cooling", a.Name, FormatCooldown(a.CooldownUntil))
 			}
 
 			if err != nil {
@@ -136,7 +137,7 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 				expired := a.AccessToken == "" || hardExpired(a, now)
 				l.Unlock()
 				if expired {
-					return nil, fmt.Errorf("%s 刷新失败: %w", a.Name, err)
+					return nil, i18n.Errorf("picker.refreshFail", a.Name, err)
 				}
 			}
 		} else {
@@ -144,7 +145,7 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 			expired := a.AccessToken == "" || hardExpired(a, now)
 			l.Unlock()
 			if expired {
-				return nil, fmt.Errorf("%s: 无可用 token 且无法刷新", a.Name)
+				return nil, i18n.Errorf("picker.noUsableToken", a.Name)
 			}
 		}
 	}
@@ -152,7 +153,7 @@ func (s *Selector) tryPick(ctx context.Context, a *Account, now time.Time) (*Acc
 	l.Lock()
 	if a.AccessToken == "" {
 		l.Unlock()
-		return nil, fmt.Errorf("%s: access_token 为空", a.Name)
+		return nil, i18n.Errorf("picker.emptyToken", a.Name)
 	}
 	cp := *a
 	l.Unlock()
@@ -267,7 +268,7 @@ func (s *Selector) Pick(ctx context.Context) (*Account, error) {
 	if allCooling && len(coolingNames) > 0 {
 		return nil, &AllCoolingError{Until: earliest, Names: coolingNames}
 	}
-	return nil, fmt.Errorf("没有可用账号: %w", s.lastErrs)
+	return nil, i18n.Errorf("picker.noneUsable", s.lastErrs)
 }
 
 // CooldownOf 返回账号当前的冷却截止时刻，账号不存在返回零值。只读，供日志展示。
@@ -410,7 +411,7 @@ func (s *Selector) FreshToken(ctx context.Context, name string) (string, error) 
 	}
 	s.mu.Unlock()
 	if target == nil {
-		return "", fmt.Errorf("账号 %q 不在候选池中", name)
+		return "", i18n.Errorf("picker.notInPool", name)
 	}
 
 	l := s.accountLock(target.Name)

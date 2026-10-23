@@ -148,7 +148,7 @@ func New(rawUpstream string, picker Picker, lg *log.Logger) (*Server, error) {
 			req.Header.Set("User-Agent", s.UserAgentForUpstream())
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			lg.Printf("转发失败 %s%s: %v", r.Host, r.URL.Path, err)
+			lg.Printf("%s", i18n.Trf("serve.forwardFail", r.Host, r.URL.Path, err))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]string{
@@ -182,8 +182,8 @@ func New(rawUpstream string, picker Picker, lg *log.Logger) (*Server, error) {
 			resp.Body = io.NopCloser(bytes.NewReader(b))
 			resp.ContentLength = int64(len(b))
 			resp.Header.Set("Content-Length", strconv.Itoa(len(b)))
-			lg.Printf("上游 %d %s: %s",
-				resp.StatusCode, resp.Request.URL.Path, clipForLog(b, maxErrLog))
+			lg.Printf("%s",
+				i18n.Trf("serve.upstreamErr", resp.StatusCode, resp.Request.URL.Path, clipForLog(b, maxErrLog)))
 			return nil
 		},
 	}
@@ -323,7 +323,7 @@ func (s *Server) serveModelDiscovery(w http.ResponseWriter, r *http.Request) boo
 		// 编码失败不该发生；真发生了就让请求走原路径，别自己编响应。
 		return false
 	}
-	s.log.Printf("模型发现 %s → %d 个模型", r.URL.Path, len(entries))
+	s.log.Printf("%s", i18n.Trf("serve.discovery", r.URL.Path, len(entries)))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
@@ -645,7 +645,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if len(s.stripFields) > 0 {
 		if err := s.rewriteBody(r); err != nil {
-			s.log.Printf("改写请求体失败 %s%s: %v", r.Host, r.URL.Path, err)
+			s.log.Printf("%s", i18n.Trf("serve.rewriteFail", r.Host, r.URL.Path, err))
 			s.writeBadRequest(w, "ags: 改写请求体失败: "+err.Error())
 			return
 		}
@@ -655,7 +655,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 并且同样在选号之前：路径对不上是请求本身的问题，与账号无关。
 	if s.envelope {
 		if err := s.applyEnvelope(r); err != nil {
-			s.log.Printf("信封改写失败 %s%s: %v", r.Host, r.URL.Path, err)
+			s.log.Printf("%s", i18n.Trf("serve.envelopeFail", r.Host, r.URL.Path, err))
 			s.writeBadRequest(w, "ags: "+err.Error())
 			return
 		}
@@ -663,7 +663,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, retryable, bodyErr := retryRequestBody(r)
 	if bodyErr != nil {
-		s.log.Printf("读取请求体失败 %s%s: %v", r.Host, r.URL.Path, bodyErr)
+		s.log.Printf("%s", i18n.Trf("serve.readBodyFail", r.Host, r.URL.Path, bodyErr))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -693,7 +693,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return io.NopCloser(bytes.NewReader(body)), nil
 			}
 		}
-		s.log.Printf("→ %s (%s) %s%s", a.Name, a.Email, r.Host, r.URL.RequestURI())
+		s.log.Printf("%s", i18n.Trf("serve.forward", a.Name, a.Email, r.Host, r.URL.RequestURI()))
 
 		if !retryable {
 			s.rp.ServeHTTP(w, req)
@@ -712,7 +712,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.log.Printf("上游 429，账号 %s 冷却，重试下一个账号", a.Name)
+		s.log.Printf("%s", i18n.Trf("serve.retryNext", a.Name))
 		// 试完所有候选仍是 429：把最后一次的 429 如实交给客户端。
 		if attempts >= maxAttempts {
 			rw.header.Set("Content-Length", strconv.Itoa(rw.body.Len()))
@@ -756,9 +756,9 @@ func (s *Server) writePickError(w http.ResponseWriter, err error) {
 			secs := int((d + time.Second - 1) / time.Second)
 			w.Header().Set("Retry-After", strconv.Itoa(secs))
 		}
-		s.log.Printf("全部账号冷却中：%v", err)
+		s.log.Printf("%s", i18n.Trf("serve.allCooling", err))
 	} else {
-		s.log.Printf("选号失败：%v", err)
+		s.log.Printf("%s", i18n.Trf("serve.pickFail", err))
 	}
 
 	w.WriteHeader(http.StatusServiceUnavailable)

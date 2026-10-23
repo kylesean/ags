@@ -327,7 +327,7 @@ func parseTUIArgs(args []string) (tuiOptions, []string, error) {
 			if hasValue {
 				var err error
 				if b, err = strconv.ParseBool(value); err != nil {
-					return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+					return o, nil, i18n.Errorf("flag.badValue", name, value)
 				}
 			}
 			switch name {
@@ -346,7 +346,7 @@ func parseTUIArgs(args []string) (tuiOptions, []string, error) {
 			if !hasValue {
 				i++
 				if i >= len(args) {
-					return o, nil, fmt.Errorf("-%s 缺少值", name)
+					return o, nil, i18n.Errorf("flag.missingValue", name)
 				}
 				value = args[i]
 			}
@@ -370,26 +370,26 @@ func parseTUIArgs(args []string) (tuiOptions, []string, error) {
 			if !hasValue {
 				i++
 				if i >= len(args) {
-					return o, nil, fmt.Errorf("-%s 缺少值", name)
+					return o, nil, i18n.Errorf("flag.missingValue", name)
 				}
 				value = args[i]
 			}
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+				return o, nil, i18n.Errorf("flag.badValue", name, value)
 			}
 			o.interval = d
 		case "quota-threshold":
 			if !hasValue {
 				i++
 				if i >= len(args) {
-					return o, nil, fmt.Errorf("-%s 缺少值", name)
+					return o, nil, i18n.Errorf("flag.missingValue", name)
 				}
 				value = args[i]
 			}
 			f, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				return o, nil, fmt.Errorf("-%s 值非法: %q", name, value)
+				return o, nil, i18n.Errorf("flag.badValue", name, value)
 			}
 			o.threshold = f
 		default:

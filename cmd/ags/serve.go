@@ -184,13 +184,12 @@ func cmdServeWithHooks(ctx context.Context, args []string, hooks serveHooks) err
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
 			reportModelTable(models, *verbose, lg, "模型映射已加载")
 			if models.DefaultAgentModelID != "" {
-				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
+				lg.Printf("%s", i18n.Trf("serve.defaultModel", models.DefaultAgentModelID))
 			}
 		}
 	}
 	lg.Printf("%s", i18n.Trf("serve.listening", *listen, srv.Upstream()))
-	lg.Printf("信封改写 %s，User-Agent %s",
-		map[bool]string{true: "开", false: "关（纯透传）"}[srv.Envelope()], *ua)
+	lg.Printf("%s", i18n.Trf("serve.envelope", envelopeState(srv.Envelope()), *ua))
 	lg.Printf("%s", i18n.Trf("serve.account", first.Name, first.Email, fmtExpiry(first.Expiry)))
 	if n := len(cands); n > 1 {
 		lg.Printf("%s", i18n.Trf("serve.candidates", n, joinNames(sel.Candidates())))
@@ -282,18 +281,26 @@ func retryFetchModelAliases(ctx context.Context, sel *pool.Selector, upstream st
 			models, err := cloudcode.FetchModels(fetchCtx, upstream, tok, srv.UserAgentForUpstream())
 			cancel()
 			if err != nil {
-				lg.Printf("后台重试获取模型表失败（将在 %s 后重试）: %v", retryInterval, err)
+				lg.Printf("%s", i18n.Trf("serve.retryFail", retryInterval, err))
 				continue
 			}
 			srv.SetModelAliases(models.Aliases)
 			srv.SetModelCatalog(toProxyCatalog(models.Catalog))
 			reportModelTable(models, verbose, lg, "后台重试获取模型表成功")
 			if models.DefaultAgentModelID != "" {
-				lg.Printf("上游默认模型 %s", models.DefaultAgentModelID)
+				lg.Printf("%s", i18n.Trf("serve.defaultModel", models.DefaultAgentModelID))
 			}
 			return
 		}
 	}
+}
+
+// envelopeState 把信封开关翻成当前语言的「开/关」。
+func envelopeState(on bool) string {
+	if on {
+		return i18n.Tr("serve.envelopeOn")
+	}
+	return i18n.Tr("serve.envelopeOff")
 }
 
 // reportModelTable 统一输出「模型表已就绪」这段日志，并带上所有告警。

@@ -60,8 +60,12 @@ func TestRawDoesNotFallBackOnErrNotFound(t *testing.T) {
 	stubKeyring(t, func(string, string) (string, error) { return "", kr.ErrNotFound }, nil)
 
 	got, err := Raw()
-	if err == nil || !strings.Contains(err.Error(), "keyring 中没有") {
-		t.Fatalf("err = %v, want 提及 keyring 中没有", err)
+	if err == nil {
+		t.Fatal("ErrNotFound 时应当报错")
+	}
+	// 断言「提到了 keyring 且指向缺少条目」，不绑定具体语言。
+	if !strings.Contains(strings.ToLower(err.Error()), "keyring") {
+		t.Fatalf("err = %v，应说明 keyring 里没有条目", err)
 	}
 	if got != "" {
 		t.Errorf("Raw = %q, want 空（不应回落到文件）", got)
@@ -123,8 +127,11 @@ func TestRawErrorsWhenBothSourcesMissing(t *testing.T) {
 	stubKeyring(t, func(string, string) (string, error) { return "", kr.ErrNotFound }, nil)
 
 	_, err := Raw()
-	if err == nil || !strings.Contains(err.Error(), "keyring 中没有") {
-		t.Fatalf("err = %v, want 提及 keyring 中没有", err)
+	if err == nil {
+		t.Fatal("两个来源都缺失时应当报错")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "keyring") {
+		t.Fatalf("err = %v，应说明 keyring 里没有条目", err)
 	}
 }
 

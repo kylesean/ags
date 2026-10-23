@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/kylesean/ags/internal/i18n"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,17 +184,16 @@ func Raw() (string, error) {
 				return string(data), nil
 			}
 		}
-		return "", fmt.Errorf("读取 keyring 失败: %w", err)
+		return "", i18n.Errorf("keyring.readFail", err)
 	}
-	return "", fmt.Errorf("keyring 中没有 service=%s / username=%s 条目（是否尚未在 agy 登录？）",
-		Service, Username)
+	return "", i18n.Errorf("keyring.noEntry", Service, Username)
 }
 
 // Parse 解析凭据 JSON。
 func Parse(raw string) (*Secret, error) {
 	var sec Secret
 	if err := json.Unmarshal([]byte(raw), &sec); err != nil {
-		return nil, fmt.Errorf("凭据不是合法 JSON: %w", err)
+		return nil, i18n.Errorf("keyring.badJSON", err)
 	}
 	if sec.Token.AccessToken == "" && sec.Token.RefreshToken == "" {
 		return nil, errors.New("凭据里 access_token 与 refresh_token 均为空")
@@ -243,7 +243,7 @@ func Current() (*Secret, string, error) {
 func decodeJWT(tok string) (*Claims, error) {
 	parts := strings.Split(tok, ".")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("id_token 段数异常（%d 段，应为 3）", len(parts))
+		return nil, i18n.Errorf("keyring.idTokenSegments", len(parts))
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
 	if err != nil {
